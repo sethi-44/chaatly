@@ -3,6 +3,7 @@ __pycache__/
 *.pyc
 
 # Virtual Environment
+backend/chaatapp/
 venv/
 
 # VS Code
