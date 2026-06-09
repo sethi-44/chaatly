@@ -1,6 +1,7 @@
 # Python
 __pycache__/
 *.pyc
+app/__pycache__/main.cpython-312.pyc
 
 # Virtual Environment
 backend/chaatapp/

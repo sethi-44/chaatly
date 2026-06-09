@@ -19,7 +19,7 @@ class Meetup(Base):
         CheckConstraint(
             "max_attendees > 0",
             name="positive_max_attendees"
-        )
+        ),
     )
 
     id = Column(
