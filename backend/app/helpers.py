@@ -1,4 +1,5 @@
 from app.models import Meetup, User,MeetupParticipant
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 def find_meetup(db, meetup_id):
@@ -32,3 +33,11 @@ def is_participant(
         MeetupParticipant.user_id == user_id,
         MeetupParticipant.meetup_id == meetup_id
     ).first()
+
+def existing_user(db, user):
+    return db.query(User).filter(
+            or_(
+                User.username == user.username,
+                User.email == user.email
+            )
+        ).first()

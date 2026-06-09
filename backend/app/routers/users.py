@@ -1,23 +1,17 @@
-from sqlalchemy import or_
 from fastapi import HTTPException,Depends
 from sqlalchemy.orm import Session
 from fastapi import APIRouter
 from app.models import User
 from app.dependencies import get_db
 from app.schemas import UserCreate
-from app.helpers import find_user
+from app.helpers import find_user,existing_user
 
 router = APIRouter()
 
 @router.post("/users",status_code=201)
 def create_user(user: UserCreate, db:Session=Depends(get_db)):
-    existing_user = db.query(User).filter(
-        or_(
-            User.username == user.username,
-            User.email == user.email
-        )
-    ).first()
-    if existing_user:
+    exxisting_user = existing_user(db, user)
+    if exxisting_user:
         raise HTTPException(
             status_code=400,
             detail="User with this username or email already exists"
