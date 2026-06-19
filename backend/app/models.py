@@ -3,9 +3,10 @@ from sqlalchemy import (
     Integer,
     String,
     CheckConstraint,
-    ForeignKey
+    ForeignKey,
+    Boolean
 )
-from sqlalchemy.orm import DeclarativeBase
+from sqlalchemy.orm import DeclarativeBase, relationship
 
 
 class Base(DeclarativeBase):
@@ -52,6 +53,14 @@ class Meetup(Base):
         nullable=False
     )
 
+    host = relationship("User")
+
+    participants = relationship(
+        "MeetupParticipant",
+        back_populates="meetup",
+        cascade="all, delete-orphan"
+    )
+
 
 class User(Base):
     __tablename__ = "users"
@@ -60,10 +69,13 @@ class User(Base):
     username = Column(String(50), unique=True,nullable=False)
     email = Column(String(100), unique=True,nullable=False)
     password_hash = Column(String(255), nullable=False)
+    is_verified = Column(Boolean, default=False)
 
 class MeetupParticipant(Base):
     __tablename__ = "meetup_participants"
 
+    user = relationship("User")
+    
     user_id = Column(
         Integer,
         ForeignKey("users.id"),
@@ -75,3 +87,21 @@ class MeetupParticipant(Base):
         ForeignKey("meetups.id"),
         primary_key=True
     )  
+
+    meetup = relationship(
+        "Meetup",
+        back_populates="participants"
+    )
+
+class RefreshToken(Base):
+    __tablename__ = "refresh_tokens"
+
+    id = Column(Integer, primary_key=True)
+
+    token = Column(String, unique=True, nullable=False)
+
+    user_id = Column(
+        Integer,
+        ForeignKey("users.id"),
+        nullable=False
+    )
