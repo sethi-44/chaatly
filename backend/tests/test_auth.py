@@ -1,31 +1,32 @@
 """
 test_auth.py — comprehensive tests for authentication endpoints.
 
-Covers: /register, /login, /refresh, /logout, /me, /users/me/change-password
+Covers: /supabase/register, /supabase/login, /supabase/refresh, /supabase/logout, /supabase/me, /supabase/change-password
 """
 import pytest
 from tests.conftest import register_user, login_user, auth_header, register_and_login
 
 
 # =========================================================================
-# /register POST
+# /supabase/register POST
 # =========================================================================
 
 class TestRegister:
-    """Tests for the POST /register endpoint."""
+    """Tests for the POST /supabase/register endpoint."""
 
     def test_register_success(self, client):
-        """Successful registration returns 201 with id, username, and email."""
+        """Successful registration returns 201 with access_token, refresh_token, and user data."""
         resp = register_user(client)
         assert resp.status_code == 201
 
         data = resp.json()
-        assert "id" in data
-        assert data["username"] == "testuser"
-        assert data["email"] == "test@example.com"
-        # password must never be returned
-        assert "password" not in data
-        assert "password_hash" not in data
+        assert "access_token" in data
+        assert "refresh_token" in data
+        assert data["token_type"] == "bearer"
+        assert "user" in data
+        assert "id" in data["user"]
+        assert data["user"]["username"] == "testuser"
+        assert data["user"]["email"] == "test@example.com"
 
     def test_register_duplicate_username(self, client):
         """Registering with an already-taken username returns 400."""
@@ -44,12 +45,12 @@ class TestRegister:
     def test_register_missing_fields(self, client):
         """Omitting required fields returns 422 (validation error)."""
         # completely empty body
-        resp = client.post("/register", json={})
+        resp = client.post("/supabase/register", json={})
         assert resp.status_code == 422
 
     def test_register_missing_password(self, client):
         """Omitting the password field returns 422."""
-        resp = client.post("/register", json={
+        resp = client.post("/supabase/register", json={
             "username": "nopass",
             "email": "nopass@example.com",
         })
@@ -72,11 +73,11 @@ class TestRegister:
 
 
 # =========================================================================
-# /login POST
+# /supabase/login POST
 # =========================================================================
 
 class TestLogin:
-    """Tests for the POST /login endpoint (OAuth2 form-based)."""
+    """Tests for the POST /supabase/login endpoint (OAuth2 form-based)."""
 
     def test_login_success(self, client):
         """Successful login returns access_token, refresh_token, and token_type=bearer."""
@@ -110,11 +111,11 @@ class TestLogin:
 
 
 # =========================================================================
-# /refresh POST
+# /supabase/refresh POST
 # =========================================================================
 
 class TestRefreshToken:
-    """Tests for the POST /refresh endpoint."""
+    """Tests for the POST /supabase/refresh endpoint."""
 
     def test_refresh_success(self, client):
         """A valid refresh token returns a new access_token."""
@@ -122,7 +123,7 @@ class TestRefreshToken:
         login_resp = login_user(client)
         refresh_tok = login_resp.json()["refresh_token"]
 
-        resp = client.post("/refresh", json={"refresh_token": refresh_tok})
+        resp = client.post("/supabase/refresh", json={"refresh_token": refresh_tok})
         assert resp.status_code == 200
 
         data = resp.json()
@@ -131,7 +132,7 @@ class TestRefreshToken:
 
     def test_refresh_with_invalid_token(self, client):
         """A completely made-up token string returns 401."""
-        resp = client.post("/refresh", json={"refresh_token": "this.is.garbage"})
+        resp = client.post("/supabase/refresh", json={"refresh_token": "this.is.garbage"})
         assert resp.status_code == 401
         assert "invalid refresh token" in resp.json()["detail"].lower()
 
@@ -145,37 +146,37 @@ class TestRefreshToken:
         login_data = login_user(client).json()
         access_tok = login_data["access_token"]
 
-        resp = client.post("/refresh", json={"refresh_token": access_tok})
+        resp = client.post("/supabase/refresh", json={"refresh_token": access_tok})
         assert resp.status_code == 401
 
     def test_refresh_new_token_is_usable(self, client):
-        """The new access_token obtained via /refresh can authenticate /me."""
+        """The new access_token obtained via /supabase/refresh can authenticate /supabase/me."""
         register_user(client)
         login_data = login_user(client).json()
 
-        refresh_resp = client.post("/refresh", json={
+        refresh_resp = client.post("/supabase/refresh", json={
             "refresh_token": login_data["refresh_token"]
         })
         new_access = refresh_resp.json()["access_token"]
 
-        me_resp = client.get("/me", headers=auth_header(new_access))
+        me_resp = client.get("/supabase/me", headers=auth_header(new_access))
         assert me_resp.status_code == 200
         assert me_resp.json()["username"] == "testuser"
 
 
 # =========================================================================
-# /logout POST
+# /supabase/logout POST
 # =========================================================================
 
 class TestLogout:
-    """Tests for the POST /logout endpoint."""
+    """Tests for the POST /supabase/logout endpoint."""
 
     def test_logout_success(self, client):
         """Logout with a valid refresh token returns a success message."""
         register_user(client)
         login_data = login_user(client).json()
 
-        resp = client.post("/logout", json={
+        resp = client.post("/supabase/logout", json={
             "refresh_token": login_data["refresh_token"]
         })
         assert resp.status_code == 200
@@ -188,33 +189,33 @@ class TestLogout:
         refresh_tok = login_data["refresh_token"]
 
         # Logout
-        logout_resp = client.post("/logout", json={"refresh_token": refresh_tok})
+        logout_resp = client.post("/supabase/logout", json={"refresh_token": login_data["refresh_token"]})
         assert logout_resp.status_code == 200
 
         # Attempt to refresh — should fail
-        resp = client.post("/refresh", json={"refresh_token": refresh_tok})
+        resp = client.post("/supabase/refresh", json={"refresh_token": refresh_tok})
         assert resp.status_code == 401
 
     def test_logout_with_unknown_token(self, client):
         """Logging out with a token that doesn't exist still returns 200
         (idempotent — the token is simply not in the DB).
         """
-        resp = client.post("/logout", json={"refresh_token": "nonexistent.token.value"})
+        resp = client.post("/supabase/logout", json={"refresh_token": "nonexistent.token.value"})
         assert resp.status_code == 200
 
 
 # =========================================================================
-# /me GET
+# /supabase/me GET
 # =========================================================================
 
 class TestMe:
-    """Tests for the GET /me endpoint."""
+    """Tests for the GET /supabase/me endpoint."""
 
     def test_me_returns_current_user(self, client):
         """A valid access token returns the authenticated user's data."""
         _, login_data, headers = register_and_login(client)
 
-        resp = client.get("/me", headers=headers)
+        resp = client.get("/supabase/me", headers=headers)
         assert resp.status_code == 200
 
         data = resp.json()
@@ -225,34 +226,36 @@ class TestMe:
         assert "password_hash" not in data
 
     def test_me_without_token(self, client):
-        """Hitting /me with no Authorization header returns 401."""
-        resp = client.get("/me")
+        """Hitting /supabase/me with no Authorization header returns 401."""
+        resp = client.get("/supabase/me")
         assert resp.status_code == 401
 
     def test_me_with_invalid_token(self, client):
-        """Hitting /me with a bogus token returns 401."""
-        resp = client.get("/me", headers=auth_header("invalid.token.here"))
+        """Hitting /supabase/me with a bogus token returns 401."""
+        resp = client.get("/supabase/me", headers=auth_header("invalid.token.here"))
         assert resp.status_code == 401
 
     def test_me_response_model_fields(self, client):
-        """The /me response only contains the UserResponse fields (username, email)."""
+        """The /supabase/me response contains expected fields."""
         _, _, headers = register_and_login(client)
-        data = client.get("/me", headers=headers).json()
-        assert set(data.keys()) == {"username", "email"}
+        data = client.get("/supabase/me", headers=headers).json()
+        assert "username" in data
+        assert "email" in data
+        assert "id" in data
 
 
 # =========================================================================
-# /users/me/change-password POST
+# /supabase/change-password POST
 # =========================================================================
 
 class TestChangePassword:
-    """Tests for the POST /users/me/change-password endpoint."""
+    """Tests for the POST /supabase/change-password endpoint."""
 
     def test_change_password_success(self, client):
         """Changing password with correct current password returns success."""
         _, _, headers = register_and_login(client)
 
-        resp = client.post("/users/me/change-password", json={
+        resp = client.post("/supabase/change-password", json={
             "current_password": "securepassword123",
             "new_password": "newsecurepassword456",
         }, headers=headers)
@@ -263,7 +266,7 @@ class TestChangePassword:
         """Providing an incorrect current password returns 400."""
         _, _, headers = register_and_login(client)
 
-        resp = client.post("/users/me/change-password", json={
+        resp = client.post("/supabase/change-password", json={
             "current_password": "wrongoldpassword1",
             "new_password": "newsecurepassword456",
         }, headers=headers)
@@ -275,15 +278,15 @@ class TestChangePassword:
         _, login_data, headers = register_and_login(client)
 
         # Change password
-        client.post("/users/me/change-password", json={
+        client.post("/supabase/change-password", json={
             "current_password": "securepassword123",
             "new_password": "newsecurepassword456",
         }, headers=headers)
 
         # Logout first to clear the old refresh token (avoids UNIQUE
         # constraint collision when the new login happens in the same second).
-        client.post("/logout", json={
-            "refresh_token": login_data["refresh_token"]
+        client.post("/supabase/logout", json={
+            "access_token": login_data["access_token"]
         })
 
         # Login with new password
@@ -295,7 +298,7 @@ class TestChangePassword:
         """After changing password, the old password no longer works."""
         _, _, headers = register_and_login(client)
 
-        client.post("/users/me/change-password", json={
+        client.post("/supabase/change-password", json={
             "current_password": "securepassword123",
             "new_password": "newsecurepassword456",
         }, headers=headers)
@@ -306,7 +309,7 @@ class TestChangePassword:
 
     def test_change_password_unauthenticated(self, client):
         """Calling change-password without auth returns 401."""
-        resp = client.post("/users/me/change-password", json={
+        resp = client.post("/supabase/change-password", json={
             "current_password": "securepassword123",
             "new_password": "newsecurepassword456",
         })
@@ -316,7 +319,7 @@ class TestChangePassword:
         """A new password shorter than 8 characters returns 422."""
         _, _, headers = register_and_login(client)
 
-        resp = client.post("/users/me/change-password", json={
+        resp = client.post("/supabase/change-password", json={
             "current_password": "securepassword123",
             "new_password": "short",
         }, headers=headers)

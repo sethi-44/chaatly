@@ -2,12 +2,9 @@ from app.models import Meetup, User,MeetupParticipant
 from app.schemas import MeetupResponse
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
-from dotenv import load_dotenv
 import resend
 import logging
 import os
-
-load_dotenv()
 
 logger = logging.getLogger(__name__)
 

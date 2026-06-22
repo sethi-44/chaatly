@@ -1,16 +1,17 @@
-from fastapi import HTTPException,Depends
+from fastapi import HTTPException, Depends, APIRouter, Request, status, Response
 from sqlalchemy.orm import Session
-from fastapi import APIRouter
 from app.models import Meetup, User, MeetupParticipant
 from app.schemas import MeetupCreate, MeetupResponse, UserResponse
 from app.dependencies import get_db
-from app.helpers import find_meetup,get_meetup_attendance,is_participant,meetup_to_response
-from app.security import get_current_user
+from app.helpers import find_meetup, get_meetup_attendance, is_participant, meetup_to_response
+from app.supabase_auth import get_current_user_supabase
+from app.rate_limit import limiter
 
 router = APIRouter()
 
 @router.get("/meetups", response_model=list[MeetupResponse])
-def get_meetups(db:Session=Depends(get_db)):
+@limiter.limit("60/minute")
+def get_meetups(request: Request, response: Response, db: Session = Depends(get_db)):
     meetups=db.query(Meetup).all()
     return [
         meetup_to_response(db, meetup)
@@ -18,14 +19,16 @@ def get_meetups(db:Session=Depends(get_db)):
     ]
 
 @router.get("/meetups/{meetup_id}", response_model=MeetupResponse)
-def get_meetup(meetup_id:int, db:Session=Depends(get_db)):
+@limiter.limit("60/minute")
+def get_meetup(request: Request, response: Response, meetup_id: int, db: Session = Depends(get_db)):
     meetup = find_meetup(db, meetup_id)
     if not meetup:
         raise HTTPException(status_code=404, detail="Meetup not found")
     return meetup_to_response(db, meetup)
 
-@router.post("/meetups",status_code=201, response_model=MeetupResponse)
-def create_meetup(meetup: MeetupCreate,current_user: User = Depends(get_current_user), db:Session=Depends(get_db)):
+@router.post("/meetups", status_code=201, response_model=MeetupResponse)
+@limiter.limit("20/minute")
+def create_meetup(request: Request, response: Response, meetup: MeetupCreate, current_user: User = Depends(get_current_user_supabase), db: Session = Depends(get_db)):
     meetup_db = Meetup(
         title=meetup.title,
         description=meetup.description,
@@ -41,7 +44,8 @@ def create_meetup(meetup: MeetupCreate,current_user: User = Depends(get_current_
     return meetup_to_response(db, meetup_db)
 
 @router.delete("/meetups/{meetup_id}")
-def delete_meetup(meetup_id: int, current_user: User = Depends(get_current_user), db:Session=Depends(get_db)):
+@limiter.limit("20/minute")
+def delete_meetup(request: Request, response: Response, meetup_id: int, current_user: User = Depends(get_current_user_supabase), db: Session = Depends(get_db)):
     meetup = find_meetup(db, meetup_id)
     if not meetup:
         raise HTTPException(status_code=404, detail="Meetup not found")
@@ -55,7 +59,8 @@ def delete_meetup(meetup_id: int, current_user: User = Depends(get_current_user)
     return {"message": f"Meetup {meetup_id} deleted successfully"}
 
 @router.put("/meetups/{meetup_id}", response_model=MeetupResponse)
-def update_meetup(meetup_id: int, meetup: MeetupCreate, current_user: User = Depends(get_current_user), db:Session=Depends(get_db)):
+@limiter.limit("20/minute")
+def update_meetup(request: Request, response: Response, meetup_id: int, meetup: MeetupCreate, current_user: User = Depends(get_current_user_supabase), db: Session = Depends(get_db)):
     meetup_to_update = find_meetup(db, meetup_id)
     if not meetup_to_update:
         raise HTTPException(status_code=404, detail="Meetup not found")
@@ -81,8 +86,9 @@ def update_meetup(meetup_id: int, meetup: MeetupCreate, current_user: User = Dep
     return meetup_to_response(db,meetup_to_update)
 
 
-@router.post("/meetups/{meetup_id}/join",status_code=201)
-def join_meetup(meetup_id: int,current_user: User = Depends(get_current_user), db:Session=Depends(get_db)):
+@router.post("/meetups/{meetup_id}/join", status_code=201)
+@limiter.limit("30/minute")
+def join_meetup(request: Request, response: Response, meetup_id: int, current_user: User = Depends(get_current_user_supabase), db: Session = Depends(get_db)):
     meetup = find_meetup(db, meetup_id)
     if not meetup:
         raise HTTPException(status_code=404, detail="Meetup not found")
@@ -115,8 +121,9 @@ def join_meetup(meetup_id: int,current_user: User = Depends(get_current_user), d
     else:
         raise HTTPException(status_code=400, detail="Meetup is full")
     
-@router.post("/meetups/{meetup_id}/leave",status_code=200)
-def leave_meetup(meetup_id: int,current_user: User = Depends(get_current_user), db:Session=Depends(get_db)):
+@router.post("/meetups/{meetup_id}/leave", status_code=200)
+@limiter.limit("30/minute")
+def leave_meetup(request: Request, response: Response, meetup_id: int, current_user: User = Depends(get_current_user_supabase), db: Session = Depends(get_db)):
     meetup = find_meetup(db, meetup_id)
     if not meetup:
         raise HTTPException(status_code=404, detail="Meetup not found")
@@ -134,7 +141,8 @@ def leave_meetup(meetup_id: int,current_user: User = Depends(get_current_user), 
     return {"message": f"Left meetup {meetup_id} successfully"}
 
 @router.get("/meetups/{meetup_id}/participants", response_model=list[UserResponse])
-def get_meetup_participants(meetup_id: int, db:Session=Depends(get_db)):
+@limiter.limit("60/minute")
+def get_meetup_participants(request: Request, response: Response, meetup_id: int, db: Session = Depends(get_db)):
     meetup = find_meetup(db, meetup_id)
     if not meetup:
         raise HTTPException(status_code=404, detail="Meetup not found")
@@ -146,7 +154,10 @@ def get_meetup_participants(meetup_id: int, db:Session=Depends(get_db)):
     return participants    
 
 @router.get("/meetups/{meetup_id}/attendance")
+@limiter.limit("60/minute")
 def get_attendance(
+    request: Request,
+    response: Response,
     meetup_id: int,
     db: Session = Depends(get_db)
 ):
@@ -167,8 +178,11 @@ def get_attendance(
     }
 
 @router.get("/my-meetups", response_model=list[MeetupResponse])
+@limiter.limit("60/minute")
 def get_my_meetups(
-    current_user: User = Depends(get_current_user),
+    request: Request,
+    response: Response,
+    current_user: User = Depends(get_current_user_supabase),
     db: Session = Depends(get_db)
 ):
     meetups = db.query(Meetup).filter(
@@ -178,8 +192,11 @@ def get_my_meetups(
     return [meetup_to_response(db, meetup) for meetup in meetups]
 
 @router.get("/my-joined-meetups", response_model=list[MeetupResponse])
+@limiter.limit("60/minute")
 def get_my_joined_meetups(
-    current_user: User = Depends(get_current_user),
+    request: Request,
+    response: Response,
+    current_user: User = Depends(get_current_user_supabase),
     db: Session = Depends(get_db)
 ):
     joined_meetups = (

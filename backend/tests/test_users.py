@@ -2,12 +2,12 @@
 test_users.py — Tests for user management endpoints.
 
 Covers:
-  POST /users        – create user
-  GET  /users/{id}   – get single user
-  GET  /users        – list all users
+  GET  /users/{id}   – get single user (authenticated)
+  GET  /users        – list all users (authenticated)
   PUT  /users/me     – update current user (authenticated)
+  POST /supabase/register — create user via Supabase Auth
 """
-from tests.conftest import register_user, register_and_login
+from tests.conftest import register_user, register_and_login, auth_header
 
 
 # ── POST /users ──────────────────────────────────────────────────────────────
@@ -17,14 +17,14 @@ class TestCreateUser:
 
     def test_create_user_success(self, client):
         """Creating a user with valid data returns 201 and the user payload."""
-        resp = client.post("/users", json={
+        resp = client.post("/supabase/register", json={
             "username": "alice",
             "email": "alice@example.com",
             "password": "strongpass123",
         })
 
         assert resp.status_code == 201
-        data = resp.json()
+        data = resp.json()["user"]
         assert data["username"] == "alice"
         assert data["email"] == "alice@example.com"
         assert "password" not in data
@@ -32,13 +32,13 @@ class TestCreateUser:
 
     def test_create_user_duplicate_username(self, client):
         """Registering a user with an already-taken username returns 400."""
-        client.post("/users", json={
+        client.post("/supabase/register", json={
             "username": "alice",
             "email": "alice@example.com",
             "password": "strongpass123",
         })
 
-        resp = client.post("/users", json={
+        resp = client.post("/supabase/register", json={
             "username": "alice",              # same username
             "email": "different@example.com",
             "password": "strongpass123",
@@ -49,13 +49,13 @@ class TestCreateUser:
 
     def test_create_user_duplicate_email(self, client):
         """Registering a user with an already-taken email returns 400."""
-        client.post("/users", json={
+        client.post("/supabase/register", json={
             "username": "alice",
             "email": "alice@example.com",
             "password": "strongpass123",
         })
 
-        resp = client.post("/users", json={
+        resp = client.post("/supabase/register", json={
             "username": "bob",
             "email": "alice@example.com",     # same email
             "password": "strongpass123",
@@ -67,11 +67,11 @@ class TestCreateUser:
     def test_create_user_invalid_data_returns_422(self, client):
         """Missing required fields / invalid values return 422."""
         # completely empty body
-        resp = client.post("/users", json={})
+        resp = client.post("/supabase/register", json={})
         assert resp.status_code == 422
 
         # password too short (min 8 chars)
-        resp = client.post("/users", json={
+        resp = client.post("/supabase/register", json={
             "username": "alice",
             "email": "alice@example.com",
             "password": "short",
@@ -79,7 +79,7 @@ class TestCreateUser:
         assert resp.status_code == 422
 
         # invalid email format
-        resp = client.post("/users", json={
+        resp = client.post("/supabase/register", json={
             "username": "alice",
             "email": "not-an-email",
             "password": "strongpass123",
@@ -87,7 +87,7 @@ class TestCreateUser:
         assert resp.status_code == 422
 
         # username too short (min 3 chars)
-        resp = client.post("/users", json={
+        resp = client.post("/supabase/register", json={
             "username": "ab",
             "email": "alice@example.com",
             "password": "strongpass123",
@@ -102,10 +102,10 @@ class TestGetUser:
 
     def test_get_user_by_id(self, client):
         """Returns the user when they exist."""
-        create_resp = register_user(client, username="alice", email="alice@example.com")
-        user_id = create_resp.json()["id"]
+        create_resp, _, headers = register_and_login(client, username="alice", email="alice@example.com")
+        user_id = create_resp.json()["user"]["id"]
 
-        resp = client.get(f"/users/{user_id}")
+        resp = client.get(f"/users/{user_id}", headers=headers)
 
         assert resp.status_code == 200
         data = resp.json()
@@ -114,7 +114,8 @@ class TestGetUser:
 
     def test_get_user_not_found(self, client):
         """Non-existent user ID returns 404."""
-        resp = client.get("/users/99999")
+        _, _, headers = register_and_login(client, username="alice", email="alice@example.com")
+        resp = client.get("/users/99999", headers=headers)
 
         assert resp.status_code == 404
         assert "not found" in resp.json()["detail"].lower()
@@ -126,18 +127,19 @@ class TestGetAllUsers:
     """GET /users — list users."""
 
     def test_get_users_empty(self, client):
-        """Returns an empty list when no users exist."""
-        resp = client.get("/users")
+        """Returns a list of users."""
+        _, _, headers = register_and_login(client, username="admin", email="admin@example.com")
+        resp = client.get("/users", headers=headers)
 
         assert resp.status_code == 200
-        assert resp.json() == []
+        assert len(resp.json()) == 1
 
     def test_get_users_after_creation(self, client):
         """Returns all created users."""
         register_user(client, username="alice", email="alice@example.com")
-        register_user(client, username="bob", email="bob@example.com")
+        _, _, headers = register_and_login(client, username="bob", email="bob@example.com")
 
-        resp = client.get("/users")
+        resp = client.get("/users", headers=headers)
 
         assert resp.status_code == 200
         data = resp.json()

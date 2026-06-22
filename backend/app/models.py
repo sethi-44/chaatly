@@ -48,7 +48,7 @@ class Meetup(Base):
     )
 
     host_id = Column(
-        Integer,
+        String(36),
         ForeignKey("users.id"),
         nullable=False
     )
@@ -65,9 +65,9 @@ class Meetup(Base):
 class User(Base):
     __tablename__ = "users"
 
-    id = Column(Integer, primary_key=True)
-    username = Column(String(50), unique=True,nullable=False)
-    email = Column(String(100), unique=True,nullable=False)
+    id = Column(String(36), primary_key=True)
+    username = Column(String(50), unique=True, nullable=False)
+    email = Column(String(100), unique=True, nullable=False)
     password_hash = Column(String(255), nullable=False)
     is_verified = Column(Boolean, default=False)
 
@@ -77,7 +77,7 @@ class MeetupParticipant(Base):
     user = relationship("User")
     
     user_id = Column(
-        Integer,
+        String(36),
         ForeignKey("users.id"),
         primary_key=True
     )
@@ -101,7 +101,7 @@ class RefreshToken(Base):
     token = Column(String, unique=True, nullable=False)
 
     user_id = Column(
-        Integer,
+        String(36),
         ForeignKey("users.id"),
         nullable=False
     )
