@@ -3,21 +3,7 @@ import { View, Text, StyleSheet, ActivityIndicator, Platform } from 'react-nativ
 import { useLocalSearchParams, router } from 'expo-router';
 import axios from 'axios';
 import Animated, { FadeInDown } from 'react-native-reanimated';
-
-const API_URL = Platform.select({
-  android: 'http://10.0.2.2:8000',
-  default: 'http://localhost:8000',
-});
-
-const C = {
-  bg: '#FFFDF9',
-  card: '#FFFFFF',
-  primary: '#FF2D78',
-  text: '#222222',
-  textSecondary: '#717171',
-  error: '#E31C5F',
-  success: '#00A699',
-};
+import { API_URL, C } from '../constants';
 
 export default function VerifyEmailScreen() {
   const { token } = useLocalSearchParams<{ token?: string }>();

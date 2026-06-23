@@ -286,7 +286,7 @@ class TestChangePassword:
         # Logout first to clear the old refresh token (avoids UNIQUE
         # constraint collision when the new login happens in the same second).
         client.post("/supabase/logout", json={
-            "access_token": login_data["access_token"]
+            "refresh_token": login_data["refresh_token"]
         })
 
         # Login with new password

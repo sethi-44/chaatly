@@ -1,5 +1,4 @@
 from supabase import create_client, Client
-from gotrue import AsyncGoTrueClient
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from app.dependencies import get_db
@@ -8,8 +7,12 @@ from app.models import User
 import os
 
 SUPABASE_URL = os.getenv("SUPABASE_URL")
+if not SUPABASE_URL:
+    raise ValueError("SUPABASE_URL environment variable is not set")
 SUPABASE_ANON_KEY = os.getenv("SUPABASE_ANON_KEY")
 SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+if not SUPABASE_SERVICE_ROLE_KEY:
+    raise ValueError("SUPABASE_SERVICE_ROLE_KEY environment variable is not set")
 SUPABASE_JWT_SECRET = os.getenv("SUPABASE_JWT_SECRET")
 
 _supabase: Client = None
@@ -66,10 +69,11 @@ async def get_current_user_supabase(
         return user
     except HTTPException:
         raise
-    except Exception as e:
+    except Exception:
+        logger.error("Authentication failed", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=f"Authentication failed: {str(e)}",
+            detail="Invalid or expired token",
             headers={"WWW-Authenticate": "Bearer"},
         )
 
@@ -84,11 +88,11 @@ def create_supabase_user(email: str, password: str, username: str) -> dict:
         })
         logger.info(f"User registered successfully in Supabase: {username}")
         return {"user": response.user, "session": None}
-    except Exception as e:
-        logger.error(f"Failed to create user {email}: {str(e)}")
+    except Exception:
+        logger.error(f"Failed to create user {email}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Failed to create user: {str(e)}"
+            detail="Failed to create user"
         )
 
 
@@ -99,7 +103,7 @@ def sign_in_supabase_user(email: str, password: str) -> dict:
             "password": password
         })
         return {"user": response.user, "session": response.session}
-    except Exception as e:
+    except Exception:
         logger.warning(f"Failed login attempt for email: {email}")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -128,10 +132,11 @@ def sign_out_supabase_user(refresh_token: str) -> None:
 def request_password_reset_supabase(email: str) -> None:
     try:
         get_supabase_client().auth.reset_password_for_email(email)
-    except Exception as e:
+    except Exception:
+        logger.error("Failed to send reset email", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Failed to send reset email: {str(e)}"
+            detail="Failed to send reset email"
         )
 
 
@@ -150,10 +155,11 @@ def verify_otp_supabase(token: str, type: str = "recovery") -> dict:
 def update_password_supabase(access_token: str, new_password: str) -> None:
     try:
         get_supabase_client().auth.update_user({"password": new_password}, access_token)
-    except Exception as e:
+    except Exception:
+        logger.error("Failed to update password", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Failed to update password: {str(e)}"
+            detail="Failed to update password"
         )
 
 

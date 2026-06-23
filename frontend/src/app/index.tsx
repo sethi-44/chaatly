@@ -29,6 +29,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import axios from 'axios';
 import * as SecureStore from 'expo-secure-store';
+import { API_URL, C, CARD_COLORS, CARD_EMOJIS, getCardColor, getCardEmoji } from '../constants';
 
 const setStorageItemAsync = async (key: string, value: string) => {
   if (Platform.OS === 'web') {
@@ -55,41 +56,6 @@ const deleteStorageItemAsync = async (key: string) => {
 };
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
-
-const API_URL = Platform.select({
-  android: 'http://10.0.2.2:8000',
-  default: 'http://localhost:8000',
-}); // Change to your Pinggy URL if testing on a physical device
-
-// ── Color Palette ────────────────────────────────────────────────────
-const C = {
-  bg: '#FFFDF9',
-  surface: '#FFFFFF',
-  primary: '#FF2D78',
-  primaryDark: '#E02468',
-  accent: '#FFC629',
-  purple: '#8B5CF6',
-  text: '#222222',
-  textSecondary: '#717171',
-  textMuted: '#B0B0B0',
-  border: '#EBEBEB',
-  inputBg: '#F7F7F9',
-  success: '#00A699',
-  error: '#E31C5F',
-  shadow: 'rgba(0,0,0,0.08)',
-};
-
-// ── Card Emoji Colors (Partiful-style warm palette) ──────────────────
-const CARD_COLORS = ['#FFEBF0', '#FFF0E6', '#F0E6FF', '#E6FFF0', '#FFF5E6', '#E6F0FF'];
-const CARD_EMOJIS = ['🍕', '🌮', '🍜', '🥘', '🍣', '🧆', '🥗', '🍲', '🫕', '🥂'];
-
-function getCardColor(index: number) {
-  return CARD_COLORS[index % CARD_COLORS.length];
-}
-
-function getCardEmoji(index: number) {
-  return CARD_EMOJIS[index % CARD_EMOJIS.length];
-}
 
 // ── Confetti Dot ─────────────────────────────────────────────────────
 function ConfettiDot({
@@ -292,13 +258,24 @@ function PrimaryButton({
   );
 }
 
+interface MeetupData {
+  id: number;
+  title: string;
+  description: string | null;
+  location: string;
+  host: { username: string } | null;
+  attendee_count: number;
+  max_attendees: number;
+  spots_left?: number;
+}
+
 // ── Meetup Card (Partiful Celebratory + Airbnb Spacing) ──────────────
 function MeetupCard({
   meetup,
   onJoin,
   index,
 }: {
-  meetup: any;
+  meetup: MeetupData;
   onJoin: (id: number) => void;
   index: number;
 }) {
@@ -483,7 +460,7 @@ export default function App() {
   const [password, setPassword] = useState('');
 
   // Dashboard fields
-  const [meetups, setMeetups] = useState<any[]>([]);
+  const [meetups, setMeetups] = useState<MeetupData[]>([]);
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [location, setLocation] = useState('');
@@ -496,8 +473,11 @@ export default function App() {
         headers: { Authorization: `Bearer ${token}` },
       });
       setCurrentUser(res.data.username);
-    } catch {
-      // ignore
+    } catch (err: any) {
+      console.warn('Failed to fetch user:', err);
+      const detail = err.response?.data?.detail;
+      setError(Array.isArray(detail) ? detail[0].msg : (detail || 'Failed to fetch user'));
+      setTimeout(() => setError(''), 5000);
     }
   }, [token]);
 
@@ -505,8 +485,11 @@ export default function App() {
     try {
       const res = await axios.get(`${API_URL}/meetups`);
       setMeetups(res.data);
-    } catch {
-      // ignore
+    } catch (err: any) {
+      console.warn('Failed to fetch meetups:', err);
+      const detail = err.response?.data?.detail;
+      setError(Array.isArray(detail) ? detail[0].msg : (detail || 'Failed to fetch meetups'));
+      setTimeout(() => setError(''), 5000);
     }
   }, []);
 
@@ -616,6 +599,9 @@ export default function App() {
 
   // ── Back Navigation Handler ────────────────────────────────────────
   const handleBack = () => {
+    setEmail('');
+    setUsername('');
+    setPassword('');
     switch (step) {
       case 'register_email':
       case 'login_email':

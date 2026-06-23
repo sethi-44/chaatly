@@ -1,10 +1,6 @@
 import { Tabs } from "expo-router";
 import { Text, View, StyleSheet, Platform } from "react-native";
-
-const ACTIVE_COLOR = "#FF2D78";
-const INACTIVE_COLOR = "#9CA3AF";
-const TAB_BAR_BG = "rgba(255, 253, 250, 0.92)";
-const TAB_BAR_BORDER = "rgba(0, 0, 0, 0.06)";
+import { ACTIVE_COLOR, INACTIVE_COLOR, TAB_BAR_BG, TAB_BAR_BORDER } from '../constants';
 
 function TabIcon({
   emoji,

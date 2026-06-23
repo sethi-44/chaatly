@@ -12,8 +12,11 @@ limiter = Limiter(
 
 async def rate_limit_exceeded_handler(request: Request, exc: RateLimitExceeded):
     retry_after = 60
-    if exc.limit and hasattr(exc.limit, 'limit'):
-        retry_after = exc.limit.limit.get_expiry()
+    try:
+        if exc.limit and hasattr(exc.limit, 'get_expiry'):
+            retry_after = int(exc.limit.get_expiry())
+    except (AttributeError, TypeError, ValueError):
+        pass
     return JSONResponse(
         status_code=429,
         content={

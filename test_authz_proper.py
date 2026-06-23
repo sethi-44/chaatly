@@ -8,7 +8,7 @@ def get_csrf():
     s = requests.Session()
     r = s.get(f"{base_url}/csrf-token")
     csrf_token = r.json()["csrf_token"]
-    return {"csrf_token": csrf_token}, csrf_token
+    return s.cookies, csrf_token
 
 def register_and_login(username, email, password):
     c, csrf = get_csrf()

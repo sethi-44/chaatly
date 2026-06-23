@@ -1,7 +1,6 @@
 # Python
 __pycache__/
 *.pyc
-backend/app/__pycache__/main.cpython-312.pyc
 
 # Virtual Environment
 backend/chaatapp/
@@ -16,3 +15,25 @@ venv/
 # OS Files
 .DS_Store
 Thumbs.db
+
+# Runtime / temp files
+cookies.txt
+cookies_a.txt
+cookies_b.txt
+*.log
+pinggy_url.txt
+server.log
+pinggy.log
+
+# Frontend
+frontend/.expo/
+frontend/dist/
+frontend/web-build/
+frontend/node_modules/
+frontend/.cache/
+
+# Test artifacts
+*.pyc
+.pytest_cache/
+.coverage
+htmlcov/

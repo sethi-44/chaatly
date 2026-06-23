@@ -10,6 +10,7 @@ def get_db():
         yield db
     except SQLAlchemyError as e:
         logger.error(f"Database connection failed: {e}")
+        db.rollback()
         raise
     finally:
         db.close()

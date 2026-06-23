@@ -25,3 +25,20 @@ htmlcov/
 # OS
 .DS_Store
 Thumbs.db
+
+# Runtime / temp files
+cookies.txt
+cookies_a.txt
+cookies_b.txt
+*.log
+server.log
+pinggy.log
+pinggy_url.txt
+
+# Backup files
+*.bak
+*.backup
+
+# Database
+*.sqlite
+*.db

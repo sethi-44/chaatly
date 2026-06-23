@@ -1,4 +1,4 @@
-from fastapi import HTTPException, Depends, APIRouter, Request, status, Response
+from fastapi import HTTPException, Depends, APIRouter, Request, Response, Query
 from sqlalchemy.orm import Session
 from app.models import Meetup, User, MeetupParticipant
 from app.schemas import MeetupCreate, MeetupResponse, UserResponse
@@ -11,8 +11,13 @@ router = APIRouter()
 
 @router.get("/meetups", response_model=list[MeetupResponse])
 @limiter.limit("60/minute")
-def get_meetups(request: Request, response: Response, db: Session = Depends(get_db)):
-    meetups=db.query(Meetup).all()
+def get_meetups(
+    request: Request,
+    db: Session = Depends(get_db),
+    skip: int = Query(0, ge=0),
+    limit: int = Query(20, ge=1, le=100),
+):
+    meetups = db.query(Meetup).offset(skip).limit(limit).all()
     return [
         meetup_to_response(db, meetup)
         for meetup in meetups
@@ -181,13 +186,14 @@ def get_attendance(
 @limiter.limit("60/minute")
 def get_my_meetups(
     request: Request,
-    response: Response,
     current_user: User = Depends(get_current_user_supabase),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    skip: int = Query(0, ge=0),
+    limit: int = Query(20, ge=1, le=100),
 ):
     meetups = db.query(Meetup).filter(
         Meetup.host_id == current_user.id
-    ).all()
+    ).offset(skip).limit(limit).all()
 
     return [meetup_to_response(db, meetup) for meetup in meetups]
 
@@ -195,9 +201,10 @@ def get_my_meetups(
 @limiter.limit("60/minute")
 def get_my_joined_meetups(
     request: Request,
-    response: Response,
     current_user: User = Depends(get_current_user_supabase),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    skip: int = Query(0, ge=0),
+    limit: int = Query(20, ge=1, le=100),
 ):
     joined_meetups = (
         db.query(Meetup)
@@ -205,6 +212,7 @@ def get_my_joined_meetups(
         .filter(
             MeetupParticipant.user_id == current_user.id
         )
+        .offset(skip).limit(limit)
         .all()
     )
 

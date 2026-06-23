@@ -67,7 +67,7 @@ curl -s -X POST http://127.0.0.1:8000/meetups/$MEETUP_ID/join \
   -H "X-CSRF-Token: $CSRF_TOKEN" -b cookies.txt
 
 echo -e "\n\n=== LEAVE MEETUP ==="
-curl -s -X DELETE http://127.0.0.1:8000/meetups/$MEETUP_ID/leave \
+curl -s -X POST http://127.0.0.1:8000/meetups/$MEETUP_ID/leave \
   -H "Authorization: Bearer $ACCESS_TOKEN2" \
   -H "X-CSRF-Token: $CSRF_TOKEN" -b cookies.txt
 

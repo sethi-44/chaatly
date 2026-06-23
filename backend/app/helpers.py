@@ -17,7 +17,7 @@ def find_meetup(db, meetup_id):
         Meetup.id == meetup_id
     ).first()
 
-def find_user(db, user_id):
+def find_user(db, user_id: str):
     return db.query(User).filter(
         User.id == user_id
     ).first()
@@ -34,8 +34,8 @@ def get_meetup_attendance(
 
 def is_participant(
     db: Session,
-    user_id: int,
-    meetup_id: int
+    user_id: str,
+    meetup_id: int,
 ):
     return db.query(
         MeetupParticipant

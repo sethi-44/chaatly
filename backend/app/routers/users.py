@@ -1,4 +1,4 @@
-from fastapi import HTTPException, Depends, APIRouter, Request, status, Response
+from fastapi import HTTPException, Depends, APIRouter, Request, Response, status, Query
 from sqlalchemy.orm import Session
 from app.models import User
 from app.dependencies import get_db
@@ -65,8 +65,14 @@ def get_user(request: Request, response: Response, user_id: str, current_user: U
 
 @router.get("/users", response_model=list[UserResponse])
 @limiter.limit("30/minute")
-def get_users(request: Request, response: Response, current_user: User = Depends(get_current_admin_user), db: Session = Depends(get_db)):
-    return db.query(User).all()
+def get_users(
+    request: Request,
+    current_user: User = Depends(get_current_admin_user),
+    db: Session = Depends(get_db),
+    skip: int = Query(0, ge=0),
+    limit: int = Query(20, ge=1, le=100),
+):
+    return db.query(User).offset(skip).limit(limit).all()
 
 # TODO:
 # Implement account deletion after deciding

@@ -5,7 +5,6 @@ import {
   TextInput,
   ScrollView,
   TouchableOpacity,
-  FlatList,
   StyleSheet,
   Dimensions,
   Pressable,
@@ -20,40 +19,7 @@ import Animated, {
   useAnimatedStyle,
   withSpring,
 } from "react-native-reanimated";
-
-// ─── Colors ────────────────────────────────────────────────────────────────────
-const C = {
-  bg: "#FFFDF9",
-  card: "#FFFFFF",
-  cardBorder: "#EBEBEB",
-  primary: "#FF2D78",
-  primaryLight: "#FF6B9D",
-  accent: "#FFC629",
-  purple: "#8B5CF6",
-  text: "#222222",
-  textSecondary: "#717171",
-  searchBg: "#FFFFFF",
-} as const;
-
-const { width: SCREEN_W } = Dimensions.get("window");
-const SMALL_CARD_W = SCREEN_W * 0.52;
-
-// ─── Shadow Tiers ──────────────────────────────────────────────────────────────
-const SHADOW_SM = {
-  shadowColor: "#000",
-  shadowOffset: { width: 0, height: 1 },
-  shadowOpacity: 0.04,
-  shadowRadius: 3,
-  elevation: 1,
-};
-
-const SHADOW_MD = {
-  shadowColor: "#000",
-  shadowOffset: { width: 0, height: 3 },
-  shadowOpacity: 0.07,
-  shadowRadius: 8,
-  elevation: 3,
-};
+import { C, SMALL_CARD_W, SHADOW_SM, SHADOW_MD, softBg, CARD_COLORS, CARD_EMOJIS, getCardColor, getCardEmoji } from '../constants';
 
 // ─── Mock Data ─────────────────────────────────────────────────────────────────
 const CATEGORIES = [
@@ -187,14 +153,6 @@ const POPULAR_MEETUPS: Meetup[] = [
     accentColor: C.accent,
   },
 ];
-
-// ─── Helper: soft tinted background from accent color ──────────────────────────
-function softBg(hex: string, opacity: number = 0.1): string {
-  const r = parseInt(hex.slice(1, 3), 16);
-  const g = parseInt(hex.slice(3, 5), 16);
-  const b = parseInt(hex.slice(5, 7), 16);
-  return `rgba(${r},${g},${b},${opacity})`;
-}
 
 // ─── Animated Category Pill ────────────────────────────────────────────────────
 function CategoryPill({
@@ -569,19 +527,17 @@ export default function ExploreScreen() {
           </TouchableOpacity>
         </Animated.View>
 
-        <FlatList
-          data={POPULAR_MEETUPS}
-          keyExtractor={(item) => item.id}
+        <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
           snapToInterval={SMALL_CARD_W + 14}
           decelerationRate="fast"
           contentContainerStyle={styles.popularList}
-          renderItem={({ item, index }) => (
-            <SmallCard meetup={item} index={index} />
-          )}
-          scrollEnabled
-        />
+        >
+          {POPULAR_MEETUPS.map((item, index) => (
+            <SmallCard key={item.id} meetup={item} index={index} />
+          ))}
+        </ScrollView>
 
         {/* ── Bottom spacer for tab bar ──────────────────────────────────── */}
         <View style={{ height: 100 }} />

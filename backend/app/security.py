@@ -141,8 +141,13 @@ pwd_context = CryptContext(
 )
 
 SECRET_KEY = os.getenv("SECRET_KEY")
+if not SECRET_KEY:
+    raise ValueError(
+        "SECRET_KEY environment variable is not set. "
+        "Please set it to a strong random string."
+    )
 EMAIL_TOKEN_SECRET = os.getenv("EMAIL_TOKEN_SECRET", SECRET_KEY)
-ALGORITHM = os.getenv("ALGORITHM")
+ALGORITHM = os.getenv("ALGORITHM", "HS256")
 
 def hash_password(password: str):
     """Hash a password using bcrypt. Kept for any legacy password needs."""
