@@ -8,6 +8,25 @@ Covers:
   POST /supabase/register — create user via Supabase Auth
 """
 from tests.conftest import register_user, register_and_login, auth_header
+from app.models import User
+
+def make_admin_user(db, email):
+    """Helper to make a user admin by updating their record in the database."""
+    user = db.query(User).filter(User.email == email).first()
+    if user:
+        user.is_admin = True
+        db.commit()
+
+def register_admin_and_login(client, db, username="admin", email="admin@example.com", password="securepassword123"):
+    """Register a user, make them admin, and return auth headers."""
+    register_user(client, username, email, password)
+    make_admin_user(db, email)
+    log = client.post("/supabase/login", data={
+        "username": email,
+        "password": password,
+    })
+    login_data = log.json()
+    return log, login_data, auth_header(login_data["access_token"])
 
 
 # ── POST /users ──────────────────────────────────────────────────────────────
@@ -124,20 +143,20 @@ class TestGetUser:
 # ── GET /users ───────────────────────────────────────────────────────────────
 
 class TestGetAllUsers:
-    """GET /users — list users."""
+    """GET /users — list users (admin only)."""
 
-    def test_get_users_empty(self, client):
+    def test_get_users_empty(self, client, db):
         """Returns a list of users."""
-        _, _, headers = register_and_login(client, username="admin", email="admin@example.com")
+        _, _, headers = register_admin_and_login(client, db, username="admin", email="admin@example.com")
         resp = client.get("/users", headers=headers)
 
         assert resp.status_code == 200
         assert len(resp.json()) == 1
 
-    def test_get_users_after_creation(self, client):
+    def test_get_users_after_creation(self, client, db):
         """Returns all created users."""
         register_user(client, username="alice", email="alice@example.com")
-        _, _, headers = register_and_login(client, username="bob", email="bob@example.com")
+        _, _, headers = register_admin_and_login(client, db, username="bob", email="bob@example.com")
 
         resp = client.get("/users", headers=headers)
 
@@ -146,6 +165,16 @@ class TestGetAllUsers:
         assert len(data) == 2
         usernames = {u["username"] for u in data}
         assert usernames == {"alice", "bob"}
+
+    def test_get_users_non_admin_returns_403(self, client):
+        """Non-admin users cannot access /users endpoint."""
+        register_user(client, username="alice", email="alice@example.com")
+        _, _, headers = register_and_login(client, username="bob", email="bob@example.com")
+
+        resp = client.get("/users", headers=headers)
+
+        assert resp.status_code == 403
+        assert "admin access required" in resp.json()["detail"].lower()
 
 
 # ── PUT /users/me ────────────────────────────────────────────────────────────

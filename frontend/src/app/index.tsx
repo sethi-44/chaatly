@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   StyleSheet,
   Text,
@@ -19,7 +19,6 @@ import Animated, {
   FadeInUp,
   FadeIn,
   FadeInRight,
-  FadeOutLeft,
   useSharedValue,
   useAnimatedStyle,
   withSpring,
@@ -29,13 +28,38 @@ import Animated, {
   Easing,
 } from 'react-native-reanimated';
 import axios from 'axios';
+import * as SecureStore from 'expo-secure-store';
+
+const setStorageItemAsync = async (key: string, value: string) => {
+  if (Platform.OS === 'web') {
+    try { localStorage.setItem(key, value); } catch (e) {}
+  } else {
+    await SecureStore.setItemAsync(key, value);
+  }
+};
+
+const getStorageItemAsync = async (key: string) => {
+  if (Platform.OS === 'web') {
+    try { return localStorage.getItem(key); } catch (e) { return null; }
+  } else {
+    return await SecureStore.getItemAsync(key);
+  }
+};
+
+const deleteStorageItemAsync = async (key: string) => {
+  if (Platform.OS === 'web') {
+    try { localStorage.removeItem(key); } catch (e) {}
+  } else {
+    await SecureStore.deleteItemAsync(key);
+  }
+};
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 const API_URL = Platform.select({
   android: 'http://10.0.2.2:8000',
   default: 'http://localhost:8000',
-});
+}); // Change to your Pinggy URL if testing on a physical device
 
 // ── Color Palette ────────────────────────────────────────────────────
 const C = {
@@ -92,7 +116,8 @@ function ConfettiDot({
       -1,
       true
     );
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [delay]);
 
   const animStyle = useAnimatedStyle(() => ({
     opacity: opacity.value,
@@ -129,6 +154,7 @@ function AnimatedEmojiHero() {
       -1,
       true
     );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const animStyle = useAnimatedStyle(() => ({
@@ -381,12 +407,28 @@ type AuthStep =
 
 export default function App() {
   const [token, setToken] = useState('');
-  const [refreshToken, setRefreshToken] = useState('');
   const [currentUser, setCurrentUser] = useState('');
   const [step, setStep] = useState<AuthStep>('landing');
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
+
+  useEffect(() => {
+    const loadToken = async () => {
+      try {
+        console.log("Loading token...");
+        const storedToken = await getStorageItemAsync('userToken');
+        console.log("Loaded:", storedToken);
+        if (storedToken) {
+          setToken(storedToken);
+          setStep('dashboard');
+        }
+      } catch (e) {
+        console.warn('Failed to load token', e);
+      }
+    };
+    loadToken();
+  }, []);
 
   // Auth fields
   const [email, setEmail] = useState('');
@@ -400,49 +442,63 @@ export default function App() {
   const [location, setLocation] = useState('');
   const [maxAttendees, setMaxAttendees] = useState('10');
 
+  const fetchCurrentUser = useCallback(async () => {
+    if (!token) return;
+    try {
+      const res = await axios.get(`${API_URL}/supabase/me`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      setCurrentUser(res.data.username);
+    } catch {
+      // ignore
+    }
+  }, [token]);
+
+  const fetchMeetups = useCallback(async () => {
+    try {
+      const res = await axios.get(`${API_URL}/meetups`);
+      setMeetups(res.data);
+    } catch {
+      // ignore
+    }
+  }, []);
+
   useEffect(() => {
     if (token && step === 'dashboard') {
       fetchMeetups();
       fetchCurrentUser();
     }
-  }, [token, step]);
-
-  const fetchCurrentUser = async () => {
-    try {
-      const res = await axios.get(`${API_URL}/me`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      setCurrentUser(res.data.username);
-    } catch (err) {}
-  };
-
-  const fetchMeetups = async () => {
-    try {
-      const res = await axios.get(`${API_URL}/meetups`);
-      setMeetups(res.data);
-    } catch (err) {}
-  };
+  }, [token, step, fetchMeetups, fetchCurrentUser]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     await fetchMeetups();
     setRefreshing(false);
-  }, [token]);
+  }, [fetchMeetups]);
 
   const handleRegister = async () => {
+    console.log("Register clicked");
     setLoading(true);
     setError('');
     try {
-      await axios.post(`${API_URL}/register`, { username, email, password });
-      // After register, immediately try login
-      const params = new URLSearchParams();
-      params.append('username', email);
-      params.append('password', password);
-      const res = await axios.post(`${API_URL}/login`, params);
+      const res = await axios.post(`${API_URL}/supabase/register`, { username, email, password });
+      console.log("Backend response:", res.data);
       setToken(res.data.access_token);
+      console.log("Token set in state");
+      
+      await setStorageItemAsync('userToken', res.data.access_token);
+      if (res.data.refresh_token) {
+        await setStorageItemAsync('refreshToken', res.data.refresh_token);
+      }
+      console.log("Token saved");
+      
       setStep('dashboard');
+      console.log("Navigated to dashboard");
     } catch (err: any) {
-      setError(err.response?.data?.detail || 'Registration failed.');
+      console.error("REGISTER FAILED");
+      console.error(err);
+      const detail = err.response?.data?.detail;
+      setError(Array.isArray(detail) ? detail[0].msg : (detail || 'Registration failed.'));
     } finally {
       setLoading(false);
     }
@@ -452,14 +508,21 @@ export default function App() {
     setLoading(true);
     setError('');
     try {
-      const params = new URLSearchParams();
-      params.append('username', email);
-      params.append('password', password);
-      const res = await axios.post(`${API_URL}/login`, params);
+      const loginPayload = `grant_type=password&username=${encodeURIComponent(email)}&password=${encodeURIComponent(password)}`;
+      const res = await axios.post(`${API_URL}/supabase/login`, loginPayload, {
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      });
       setToken(res.data.access_token);
+      
+      await setStorageItemAsync('userToken', res.data.access_token);
+      if (res.data.refresh_token) {
+        await setStorageItemAsync('refreshToken', res.data.refresh_token);
+      }
+      
       setStep('dashboard');
     } catch (err: any) {
-      setError(err.response?.data?.detail || 'Login failed.');
+      const detail = err.response?.data?.detail;
+      setError(Array.isArray(detail) ? detail[0].msg : (detail || 'Login failed.'));
     } finally {
       setLoading(false);
     }
@@ -483,7 +546,8 @@ export default function App() {
       setMaxAttendees('10');
       fetchMeetups();
     } catch (err: any) {
-      setError(err.response?.data?.detail || 'Failed to create meetup');
+      const detail = err.response?.data?.detail;
+      setError(Array.isArray(detail) ? detail[0].msg : (detail || 'Failed to create meetup'));
       setTimeout(() => setError(''), 3000);
     }
   };
@@ -497,7 +561,8 @@ export default function App() {
       );
       fetchMeetups();
     } catch (err: any) {
-      setError(err.response?.data?.detail || 'Could not join meetup');
+      const detail = err.response?.data?.detail;
+      setError(Array.isArray(detail) ? detail[0].msg : (detail || 'Could not join meetup'));
       setTimeout(() => setError(''), 3000);
     }
   };
@@ -599,9 +664,9 @@ export default function App() {
           {step === 'register_email' && (
             <Animated.View entering={FadeInRight} style={styles.stepContent}>
               <Text style={styles.stepEmoji}>📧</Text>
-              <Text style={styles.stepTitle}>What's your email{'\n'}address?</Text>
+              <Text style={styles.stepTitle}>{`What's your email\naddress?`}</Text>
               <Text style={styles.stepSubtitle}>
-                We'll use this to keep your account safe.
+                {`We'll use this to keep your account safe.`}
               </Text>
               <AnimatedInput
                 label="Email"
@@ -694,7 +759,7 @@ export default function App() {
               <Text style={styles.stepEmoji}>🔑</Text>
               <Text style={styles.stepTitle}>Enter your password</Text>
               <Text style={styles.stepSubtitle}>
-                Let's get you back to the table.
+                {`Let's get you back to the table.`}
               </Text>
               <AnimatedInput
                 label="Password"
@@ -728,9 +793,11 @@ export default function App() {
         </View>
         <TouchableOpacity
           style={styles.profileBtn}
-          onPress={() => {
+          onPress={async () => {
             setToken('');
             setStep('landing');
+            await deleteStorageItemAsync('userToken');
+            await deleteStorageItemAsync('refreshToken');
           }}
           activeOpacity={0.8}
         >

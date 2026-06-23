@@ -7,7 +7,7 @@ load_dotenv()
 
 from app.routers import meetups, users, supabase_auth
 # from app.routers import register, login  # DIY auth - commented out, using Supabase Auth instead
-from app.rate_limit import setup_rate_limiting
+from app.rate_limit import setup_rate_limiting, limiter
 from app.csrf import CSRFMiddleware, generate_csrf_token, set_csrf_cookie
 
 app = FastAPI()
@@ -33,11 +33,13 @@ app.include_router(users.router)
 app.include_router(supabase_auth.router)
 
 @app.get("/")
-def greet():
+@limiter.limit("60/minute")
+def greet(request: Request):
     return {"message": "Welcome to Chaatly"}
 
 @app.get("/csrf-token")
-def get_csrf_token(response: Response):
+@limiter.limit("30/minute")
+def get_csrf_token(request: Request, response: Response):
     token = generate_csrf_token()
     set_csrf_cookie(response, token)
     return {"csrf_token": token}

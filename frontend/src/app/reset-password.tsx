@@ -50,12 +50,13 @@ export default function ResetPasswordScreen() {
 
     setStatus('loading');
     try {
-      await axios.post(`${API_URL}/reset-password`, { token, new_password: password });
+      await axios.post(`${API_URL}/supabase/reset-password`, { token, new_password: password });
       setStatus('success');
       setMessage('Password has been successfully reset!');
     } catch (err: any) {
       setStatus('error');
-      setMessage(err.response?.data?.detail || 'Failed to reset password');
+      const detail = err.response?.data?.detail;
+      setMessage(Array.isArray(detail) ? detail[0].msg : (detail || 'Failed to reset password'));
     }
   };
 

@@ -10,6 +10,14 @@ from app.rate_limit import limiter
 
 router = APIRouter()
 
+async def get_current_admin_user(current_user: User = Depends(get_current_user_supabase)) -> User:
+    if not current_user.is_admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin access required"
+        )
+    return current_user
+
 @router.get(
     "/me",
     response_model=UserResponse
@@ -50,11 +58,14 @@ def get_user(request: Request, response: Response, user_id: str, current_user: U
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
     
+    if user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Not allowed to access other users' data")
+    
     return user
 
 @router.get("/users", response_model=list[UserResponse])
 @limiter.limit("30/minute")
-def get_users(request: Request, response: Response, current_user: User = Depends(get_current_user_supabase), db: Session = Depends(get_db)):
+def get_users(request: Request, response: Response, current_user: User = Depends(get_current_admin_user), db: Session = Depends(get_db)):
     return db.query(User).all()
 
 # TODO:

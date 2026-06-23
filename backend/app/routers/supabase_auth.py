@@ -23,6 +23,11 @@ from app.rate_limit import limiter
 COOKIE_DOMAIN = os.getenv("COOKIE_DOMAIN")
 COOKIE_SECURE = os.getenv("COOKIE_SECURE", "true").lower() == "true"
 
+# Enforce secure cookies in production
+ENV = os.getenv("ENV", "development")
+if ENV == "production" and not COOKIE_SECURE:
+    raise RuntimeError("COOKIE_SECURE must be true in production")
+
 
 def set_auth_cookies(response: Response, access_token: str, refresh_token: str):
     response.set_cookie(
@@ -340,4 +345,12 @@ def supabase_change_password(
         )
     
     update_password_supabase(sign_in_result.session.access_token, body.new_password)
-    return {"message": "Password changed successfully"}
+    
+    # Revoke all local refresh tokens for this user (Supabase invalidates sessions server-side)
+    db.query(RefreshToken).filter(RefreshToken.user_id == current_user.id).delete()
+    db.commit()
+    
+    # Clear auth cookies since session is invalidated
+    clear_auth_cookies(response)
+    
+    return {"message": "Password changed successfully. Please log in again."}

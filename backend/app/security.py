@@ -141,6 +141,7 @@ pwd_context = CryptContext(
 )
 
 SECRET_KEY = os.getenv("SECRET_KEY")
+EMAIL_TOKEN_SECRET = os.getenv("EMAIL_TOKEN_SECRET", SECRET_KEY)
 ALGORITHM = os.getenv("ALGORITHM")
 
 def hash_password(password: str):
@@ -161,18 +162,18 @@ def create_verification_token(email: str):
     """Create a JWT token for email verification links (24h expiry)."""
     expire = datetime.now(timezone.utc) + timedelta(hours=24)
     to_encode = {"sub": email, "type": "verification", "exp": expire}
-    return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+    return jwt.encode(to_encode, EMAIL_TOKEN_SECRET, algorithm=ALGORITHM)
 
 def create_password_reset_token(email: str):
     """Create a JWT token for password reset links (15min expiry)."""
     expire = datetime.now(timezone.utc) + timedelta(minutes=15)
     to_encode = {"sub": email, "type": "reset", "exp": expire}
-    return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+    return jwt.encode(to_encode, EMAIL_TOKEN_SECRET, algorithm=ALGORITHM)
 
 def verify_token(token: str, token_type: str):
     """Verify a JWT token for email verification or password reset."""
     try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        payload = jwt.decode(token, EMAIL_TOKEN_SECRET, algorithms=[ALGORITHM])
         if payload.get("type") != token_type:
             return None
         return payload.get("sub")

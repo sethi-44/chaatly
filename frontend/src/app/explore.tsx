@@ -19,8 +19,6 @@ import Animated, {
   useSharedValue,
   useAnimatedStyle,
   withSpring,
-  withTiming,
-  interpolateColor,
 } from "react-native-reanimated";
 
 // ─── Colors ────────────────────────────────────────────────────────────────────
@@ -38,7 +36,6 @@ const C = {
 } as const;
 
 const { width: SCREEN_W } = Dimensions.get("window");
-const CARD_W = SCREEN_W * 0.78;
 const SMALL_CARD_W = SCREEN_W * 0.52;
 
 // ─── Shadow Tiers ──────────────────────────────────────────────────────────────
@@ -56,14 +53,6 @@ const SHADOW_MD = {
   shadowOpacity: 0.07,
   shadowRadius: 8,
   elevation: 3,
-};
-
-const SHADOW_LG = {
-  shadowColor: "#000",
-  shadowOffset: { width: 0, height: 6 },
-  shadowOpacity: 0.1,
-  shadowRadius: 16,
-  elevation: 6,
 };
 
 // ─── Mock Data ─────────────────────────────────────────────────────────────────

@@ -16,7 +16,7 @@ CSRF_EXEMPT_PATHS = {
     "/supabase/verify-email",
     "/supabase/request-password-reset",
     "/supabase/register",
-    "/supabase/login",
+    # "/supabase/login" - intentionally NOT exempt (uses form-data + cookies)
     "/supabase/refresh",
     "/supabase/logout",
     "/supabase/reset-password",

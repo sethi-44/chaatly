@@ -70,6 +70,7 @@ class User(Base):
     email = Column(String(100), unique=True, nullable=False)
     password_hash = Column(String(255), nullable=False)
     is_verified = Column(Boolean, default=False)
+    is_admin = Column(Boolean, default=False, nullable=False)
 
 class MeetupParticipant(Base):
     __tablename__ = "meetup_participants"

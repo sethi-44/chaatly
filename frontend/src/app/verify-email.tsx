@@ -31,14 +31,15 @@ export default function VerifyEmailScreen() {
       return;
     }
 
-    axios.post(`${API_URL}/verify-email`, { token })
+    axios.post(`${API_URL}/supabase/verify-email`, { token })
       .then((res) => {
         setStatus('success');
         setMessage(res.data.message || 'Email verified successfully!');
       })
       .catch((err) => {
         setStatus('error');
-        setMessage(err.response?.data?.detail || 'Failed to verify email');
+        const detail = err.response?.data?.detail;
+        setMessage(Array.isArray(detail) ? detail[0].msg : (detail || 'Failed to verify email'));
       });
   }, [token]);
 
