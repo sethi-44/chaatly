@@ -1,7 +1,6 @@
 databases:
   # 1. PostgreSQL Database
   - name: chaatly-db
-    plan: free
     postgresMajorVersion: "15"
 
 services:
@@ -12,7 +11,6 @@ services:
     env: docker
     dockerContext: ./backend
     dockerfilePath: ./backend/Dockerfile
-    plan: free
     healthCheckPath: /health
     envVars:
       - key: DATABASE_URL
@@ -45,7 +43,6 @@ services:
     env: static
     buildCommand: "cd frontend && npm install && npx expo export -p web"
     staticPublishPath: "./frontend/dist"
-    plan: free
     envVars:
       # Automatically point frontend to the backend's Render URL
       - key: EXPO_PUBLIC_API_URL
