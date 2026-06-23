@@ -15,13 +15,16 @@ SUPABASE_JWT_SECRET = os.getenv("SUPABASE_JWT_SECRET")
 _supabase: Client = None
 _supabase_admin = None
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 def get_supabase_client() -> Client:
     global _supabase, _supabase_admin
     if _supabase is None:
-        # print("SUPABASE_URL:", SUPABASE_URL)
-        # print("SERVICE_KEY_PREFIX:", SUPABASE_SERVICE_ROLE_KEY[:20])
         _supabase = create_client(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
         _supabase_admin = _supabase.auth.admin
+        logger.info("Supabase client initialized")
     return _supabase
 
 def get_supabase_admin():
@@ -79,8 +82,10 @@ def create_supabase_user(email: str, password: str, username: str) -> dict:
             "user_metadata": {"username": username},
             "email_confirm": True
         })
+        logger.info(f"User registered successfully in Supabase: {username}")
         return {"user": response.user, "session": None}
     except Exception as e:
+        logger.error(f"Failed to create user {email}: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Failed to create user: {str(e)}"
@@ -95,6 +100,7 @@ def sign_in_supabase_user(email: str, password: str) -> dict:
         })
         return {"user": response.user, "session": response.session}
     except Exception as e:
+        logger.warning(f"Failed login attempt for email: {email}")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid credentials"

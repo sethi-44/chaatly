@@ -1,0 +1,13 @@
+INFO:     Started server process [76573]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:8000 (Press CTRL+C to quit)
+INFO:     127.0.0.1:38102 - "GET /csrf-token HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38108 - "POST /supabase/register HTTP/1.1" 201 Created
+INFO:     127.0.0.1:41840 - "POST /supabase/login HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41854 - "POST /meetups HTTP/1.1" 201 Created
+INFO:     127.0.0.1:41858 - "GET /csrf-token HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41872 - "POST /supabase/register HTTP/1.1" 400 Bad Request
+INFO:     127.0.0.1:41880 - "POST /supabase/login HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:41882 - "PUT /meetups/1 HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:41890 - "DELETE /meetups/1 HTTP/1.1" 401 Unauthorized

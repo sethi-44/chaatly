@@ -1,0 +1,46 @@
+version: '3.8'
+
+services:
+  db:
+    image: postgres:15
+    restart: always
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-harshit}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-harshit@123}
+      POSTGRES_DB: ${POSTGRES_DB:-chaatly}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-harshit} -d ${POSTGRES_DB:-chaatly}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    restart: always
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-harshit}:${POSTGRES_PASSWORD:-harshit@123}@db:5432/${POSTGRES_DB:-chaatly}
+      - ENV=production
+      - COOKIE_SECURE=true
+      # Provide these in a production .env file:
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY}
+      - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY}
+      - FRONTEND_URL=${FRONTEND_URL}
+      - COOKIE_DOMAIN=${COOKIE_DOMAIN}
+      - CSRF_SECRET_KEY=${CSRF_SECRET_KEY}
+      - SENTRY_DSN=${SENTRY_DSN}
+    depends_on:
+      db:
+        condition: service_healthy
+    command: bash -c "alembic upgrade head && gunicorn app.main:app -w 4 -k uvicorn.workers.UvicornWorker --bind 0.0.0.0:8000"
+
+volumes:
+  postgres_data:

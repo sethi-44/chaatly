@@ -413,7 +413,50 @@ export default function App() {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
 
+  const handleLogout = async () => {
+    try {
+      const rToken = await getStorageItemAsync('refreshToken');
+      if (rToken) {
+        await axios.post(`${API_URL}/supabase/logout`, { refresh_token: rToken });
+      }
+    } catch (e) {
+      console.warn('Logout error', e);
+    } finally {
+      await deleteStorageItemAsync('userToken');
+      await deleteStorageItemAsync('refreshToken');
+      setToken('');
+      setCurrentUser('');
+      setStep('landing');
+    }
+  };
+
   useEffect(() => {
+    const interceptor = axios.interceptors.response.use(
+      (response) => response,
+      async (error) => {
+        const originalRequest = error.config;
+        if (error.response?.status === 401 && !originalRequest._retry) {
+          originalRequest._retry = true;
+          try {
+            const rToken = await getStorageItemAsync('refreshToken');
+            if (rToken) {
+              const res = await axios.post(`${API_URL}/supabase/refresh`, { refresh_token: rToken });
+              const newAccess = res.data.access_token;
+              const newRefresh = res.data.refresh_token;
+              await setStorageItemAsync('userToken', newAccess);
+              await setStorageItemAsync('refreshToken', newRefresh);
+              setToken(newAccess);
+              originalRequest.headers.Authorization = `Bearer ${newAccess}`;
+              return axios(originalRequest);
+            }
+          } catch (e) {
+            handleLogout();
+          }
+        }
+        return Promise.reject(error);
+      }
+    );
+
     const loadToken = async () => {
       try {
         console.log("Loading token...");
@@ -428,6 +471,10 @@ export default function App() {
       }
     };
     loadToken();
+
+    return () => {
+      axios.interceptors.response.eject(interceptor);
+    };
   }, []);
 
   // Auth fields
@@ -793,12 +840,7 @@ export default function App() {
         </View>
         <TouchableOpacity
           style={styles.profileBtn}
-          onPress={async () => {
-            setToken('');
-            setStep('landing');
-            await deleteStorageItemAsync('userToken');
-            await deleteStorageItemAsync('refreshToken');
-          }}
+          onPress={handleLogout}
           activeOpacity={0.8}
         >
           <Text style={styles.profileBtnInitial}>
