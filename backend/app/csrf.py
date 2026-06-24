@@ -46,15 +46,17 @@ class CSRFMiddleware(BaseHTTPMiddleware):
         csrf_token_header = request.headers.get(CSRF_HEADER_NAME)
 
         if not csrf_token_cookie or not csrf_token_header:
-            raise HTTPException(
+            from fastapi.responses import JSONResponse
+            return JSONResponse(
                 status_code=403,
-                detail="CSRF token missing"
+                content={"detail": "CSRF token missing"}
             )
 
         if not secrets.compare_digest(csrf_token_cookie, csrf_token_header):
-            raise HTTPException(
+            from fastapi.responses import JSONResponse
+            return JSONResponse(
                 status_code=403,
-                detail="Invalid CSRF token"
+                content={"detail": "Invalid CSRF token"}
             )
 
         response = await call_next(request)
@@ -72,10 +74,6 @@ def set_csrf_cookie(response: Response, token: str) -> None:
         httponly=True,
         secure=True,
         samesite="lax",
-        max_age=3600,
+        max_age=7 * 24 * 3600,
         path="/",
     )
-
-
-def get_csrf_token(request: Request) -> str | None:
-    return request.cookies.get(CSRF_COOKIE_NAME)

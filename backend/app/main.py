@@ -50,8 +50,6 @@ app.add_middleware(CSRFMiddleware)
 
 app.include_router(meetups.router)
 app.include_router(users.router)
-# app.include_router(register.router)  # DIY auth - commented out
-# app.include_router(login.router)     # DIY auth - commented out
 app.include_router(supabase_auth.router)
 
 @app.get("/")

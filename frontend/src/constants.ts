@@ -51,18 +51,25 @@ export const SHADOW_MD = {
 };
 
 export function softBg(hex: string, opacity: number = 0.1): string {
-  const r = parseInt(hex.slice(1, 3), 16);
-  const g = parseInt(hex.slice(3, 5), 16);
-  const b = parseInt(hex.slice(5, 7), 16);
+  // Handle 3-digit hex (e.g., #F00 -> #FF0000)
+  let normalizedHex = hex;
+  if (hex.length === 4) {
+    normalizedHex = '#' + hex[1].repeat(2) + hex[2].repeat(2) + hex[3].repeat(2);
+  }
+  const r = parseInt(normalizedHex.slice(1, 3), 16);
+  const g = parseInt(normalizedHex.slice(3, 5), 16);
+  const b = parseInt(normalizedHex.slice(5, 7), 16);
   return `rgba(${r},${g},${b},${opacity})`;
 }
 
 export function getCardColor(index: number): string {
-  return CARD_COLORS[index % CARD_COLORS.length];
+  const normalizedIndex = ((index % CARD_COLORS.length) + CARD_COLORS.length) % CARD_COLORS.length;
+  return CARD_COLORS[normalizedIndex];
 }
 
 export function getCardEmoji(index: number): string {
-  return CARD_EMOJIS[index % CARD_EMOJIS.length];
+  const normalizedIndex = ((index % CARD_EMOJIS.length) + CARD_EMOJIS.length) % CARD_EMOJIS.length;
+  return CARD_EMOJIS[normalizedIndex];
 }
 
 export const ACTIVE_COLOR = '#FF2D78';

@@ -1,12 +1,5 @@
 #!/bin/bash
 
-cd backend
-source venv/bin/activate
-uvicorn app.main:app --host 127.0.0.1 --port 8000 > server.log 2>&1 &
-SERVER_PID=$!
-echo "Started server with PID $SERVER_PID"
-sleep 4
-
 echo -e "\n=== FETCH CSRF TOKEN ==="
 CSRF_RESP=$(curl -s -c cookies.txt http://127.0.0.1:8000/csrf-token)
 CSRF_TOKEN=$(echo $CSRF_RESP | python3 -c "import sys, json; print(json.load(sys.stdin).get('csrf_token', ''))")
@@ -15,12 +8,13 @@ echo "CSRF_TOKEN: $CSRF_TOKEN"
 USER_EMAIL="testuser_${RANDOM}@example.com"
 USER_EMAIL_ENC=${USER_EMAIL/@/%40}
 USER_PASS="password123"
+RANDOM_USERNAME="user_${RANDOM}"
 
 echo -e "\n=== REGISTER ==="
 REG_RESP=$(curl -s -X POST http://127.0.0.1:8000/supabase/register \
   -H "Content-Type: application/json" \
   -H "X-CSRF-Token: $CSRF_TOKEN" -b cookies.txt \
-  -d "{\"username\": \"testuser\", \"email\": \"$USER_EMAIL\", \"password\": \"$USER_PASS\"}")
+  -d "{\"username\": \"$RANDOM_USERNAME\", \"email\": \"$USER_EMAIL\", \"password\": \"$USER_PASS\"}")
 echo $REG_RESP
 
 echo -e "\n=== LOGIN ==="
@@ -95,5 +89,4 @@ curl -s -X POST http://127.0.0.1:8000/supabase/logout \
   -H "X-CSRF-Token: $CSRF_TOKEN" -b cookies.txt \
   -d "{\"refresh_token\": \"$REFRESH_TOKEN\"}"
 
-kill $SERVER_PID
-echo -e "\n\nFinished tests and killed server."
+echo -e "\n\nFinished tests."

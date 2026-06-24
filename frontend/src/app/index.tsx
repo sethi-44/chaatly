@@ -58,7 +58,7 @@ const deleteStorageItemAsync = async (key: string) => {
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 // ── Confetti Dot ─────────────────────────────────────────────────────
-function ConfettiDot({
+export function ConfettiDot({
   size,
   color,
   top,
@@ -108,7 +108,7 @@ function ConfettiDot({
 }
 
 // ── Animated Emoji Hero ──────────────────────────────────────────────
-function AnimatedEmojiHero() {
+export function AnimatedEmojiHero() {
   const floatY = useSharedValue(0);
 
   useEffect(() => {
@@ -139,7 +139,7 @@ function AnimatedEmojiHero() {
 }
 
 // ── Spots Progress Bar ───────────────────────────────────────────────
-function SpotsBar({ spotsLeft, total }: { spotsLeft: number; total: number }) {
+export function SpotsBar({ spotsLeft, total }: { spotsLeft: number; total: number }) {
   const filled = Math.max(0, total - spotsLeft);
   const pct = Math.min((filled / total) * 100, 100);
   const isFull = spotsLeft <= 0;
@@ -166,7 +166,7 @@ function SpotsBar({ spotsLeft, total }: { spotsLeft: number; total: number }) {
 }
 
 // ── Animated Input ───────────────────────────────────────────────────
-function AnimatedInput({
+export function AnimatedInput({
   label,
   placeholder,
   value,
@@ -218,7 +218,7 @@ function AnimatedInput({
 }
 
 // ── Primary Button ───────────────────────────────────────────────────
-function PrimaryButton({
+export function PrimaryButton({
   label,
   onPress,
   loading,
@@ -270,16 +270,27 @@ interface MeetupData {
 }
 
 // ── Meetup Card (Partiful Celebratory + Airbnb Spacing) ──────────────
-function MeetupCard({
+export function MeetupCard({
   meetup,
   onJoin,
+  onLeave,
+  onEdit,
+  onDelete,
   index,
+  currentUser,
+  isJoined,
 }: {
   meetup: MeetupData;
   onJoin: (id: number) => void;
+  onLeave?: (id: number) => void;
+  onEdit?: (meetup: MeetupData) => void;
+  onDelete?: (id: number) => void;
   index: number;
+  currentUser: string;
+  isJoined?: boolean;
 }) {
   const hostInitial = meetup.host?.username?.charAt(0)?.toUpperCase() || '?';
+  const isHost = meetup.host?.username === currentUser;
   const spotsLeft = meetup.spots_left ?? (meetup.max_attendees - (meetup.attendee_count || 0));
   const totalSpots = meetup.max_attendees || 10;
   const isFull = spotsLeft <= 0;
@@ -348,24 +359,49 @@ function MeetupCard({
         {/* Spots progress bar */}
         <SpotsBar spotsLeft={spotsLeft} total={totalSpots} />
 
-        {/* Join button */}
+        {/* Action Buttons */}
         <Animated.View style={joinAnimStyle}>
-          <TouchableOpacity
-            style={[styles.joinBtn, isFull && styles.joinBtnDisabled]}
-            onPress={() => onJoin(meetup.id)}
-            disabled={isFull}
-            activeOpacity={0.85}
-            onPressIn={() => {
-              joinScale.value = withSpring(0.96);
-            }}
-            onPressOut={() => {
-              joinScale.value = withSpring(1);
-            }}
-          >
-            <Text style={[styles.joinBtnText, isFull && styles.joinBtnTextDisabled]}>
-              {isFull ? 'Meetup Full' : '🎉 Join Meetup'}
-            </Text>
-          </TouchableOpacity>
+          {isHost ? (
+            <View style={{ flexDirection: 'row', gap: 8, marginTop: 4 }}>
+              <TouchableOpacity
+                style={[styles.joinBtn, { flex: 1, backgroundColor: C.primary, opacity: 0.9 }]}
+                onPress={() => onEdit && onEdit(meetup)}
+                activeOpacity={0.85}
+              >
+                <Text style={styles.joinBtnText}>✏️ Edit</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.joinBtn, { flex: 1, backgroundColor: '#FF4B4B', opacity: 0.9 }]}
+                onPress={() => onDelete && onDelete(meetup.id)}
+                activeOpacity={0.85}
+              >
+                <Text style={styles.joinBtnText}>🗑️ Delete</Text>
+              </TouchableOpacity>
+            </View>
+          ) : isJoined ? (
+            <TouchableOpacity
+              style={[styles.joinBtn, { backgroundColor: '#FF4B4B', opacity: 0.9 }]}
+              onPress={() => onLeave && onLeave(meetup.id)}
+              activeOpacity={0.85}
+              onPressIn={() => { joinScale.value = withSpring(0.96); }}
+              onPressOut={() => { joinScale.value = withSpring(1); }}
+            >
+              <Text style={styles.joinBtnText}>✅ Joined (Leave)</Text>
+            </TouchableOpacity>
+          ) : (
+            <TouchableOpacity
+              style={[styles.joinBtn, isFull && styles.joinBtnDisabled]}
+              onPress={() => onJoin(meetup.id)}
+              disabled={isFull}
+              activeOpacity={0.85}
+              onPressIn={() => { joinScale.value = withSpring(0.96); }}
+              onPressOut={() => { joinScale.value = withSpring(1); }}
+            >
+              <Text style={[styles.joinBtnText, isFull && styles.joinBtnTextDisabled]}>
+                {isFull ? 'Meetup Full' : '🎉 Join Meetup'}
+              </Text>
+            </TouchableOpacity>
+          )}
         </Animated.View>
       </View>
     </Animated.View>
@@ -389,6 +425,8 @@ export default function App() {
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
+  const [editingMeetupId, setEditingMeetupId] = useState<number | null>(null);
+  const [joinedMeetupIds, setJoinedMeetupIds] = useState<number[]>([]);
 
   const handleLogout = async () => {
     try {
@@ -408,28 +446,93 @@ export default function App() {
   };
 
   useEffect(() => {
+    const initCSRF = async () => {
+      try {
+        axios.defaults.withCredentials = true;
+        const res = await axios.get(`${API_URL}/csrf-token`);
+        axios.defaults.headers.common['X-CSRF-Token'] = res.data.csrf_token;
+      } catch (e) {
+        console.warn('Failed to init CSRF', e);
+      }
+    };
+    initCSRF();
+    let isRefreshing = false;
+    let failedQueue: { resolve: (v: any) => void; reject: (e: any) => void }[] = [];
+
+    // A raw axios instance with NO interceptors, used only for refresh calls
+    const rawAxios = axios.create();
+
+    const processQueue = (error: any, token: string | null = null) => {
+      failedQueue.forEach(prom => {
+        if (error) {
+          prom.reject(error);
+        } else {
+          prom.resolve(token);
+        }
+      });
+      failedQueue = [];
+    };
+
     const interceptor = axios.interceptors.response.use(
       (response) => response,
       async (error) => {
         const originalRequest = error.config;
-        if (error.response?.status === 401 && !originalRequest._retry) {
+        const url = originalRequest?.url || '';
+        
+        // Only intercept 401s from non-auth API endpoints
+        const isAuthEndpoint = 
+          url.includes('/supabase/refresh') ||
+          url.includes('/supabase/logout') ||
+          url.includes('/supabase/login') ||
+          url.includes('/supabase/register') ||
+          url.includes('/csrf-token');
+
+        if (error.response?.status === 401 && !originalRequest._retry && !isAuthEndpoint) {
+          // If another request is already refreshing, queue this one
+          if (isRefreshing) {
+            return new Promise((resolve, reject) => {
+              failedQueue.push({ resolve, reject });
+            }).then((newToken) => {
+              originalRequest.headers.Authorization = `Bearer ${newToken}`;
+              return axios(originalRequest);
+            });
+          }
+
           originalRequest._retry = true;
+          isRefreshing = true;
+
           try {
             const rToken = await getStorageItemAsync('refreshToken');
-            if (rToken) {
-              const res = await axios.post(`${API_URL}/supabase/refresh`, { refresh_token: rToken });
-              const newAccess = res.data.access_token;
-              const newRefresh = res.data.refresh_token;
-              await setStorageItemAsync('userToken', newAccess);
-              await setStorageItemAsync('refreshToken', newRefresh);
-              setToken(newAccess);
-              originalRequest.headers.Authorization = `Bearer ${newAccess}`;
-              return axios(originalRequest);
-            }
-          } catch (e) {
-            handleLogout();
+            if (!rToken) throw new Error('No refresh token');
+
+            // Use rawAxios (no interceptors) to prevent recursive loops
+            const res = await rawAxios.post(
+              `${API_URL}/supabase/refresh`,
+              { refresh_token: rToken },
+              { headers: { 'X-CSRF-Token': axios.defaults.headers.common['X-CSRF-Token'] } }
+            );
+            const newAccess = res.data.access_token;
+            const newRefresh = res.data.refresh_token;
+            await setStorageItemAsync('userToken', newAccess);
+            await setStorageItemAsync('refreshToken', newRefresh);
+            setToken(newAccess);
+            processQueue(null, newAccess);
+            originalRequest.headers.Authorization = `Bearer ${newAccess}`;
+            return await axios(originalRequest);
+          } catch (refreshError) {
+            processQueue(refreshError, null);
+            // Silently clear local state and go to landing
+            await deleteStorageItemAsync('userToken');
+            await deleteStorageItemAsync('refreshToken');
+            setToken('');
+            setCurrentUser('');
+            setStep('landing');
+            return Promise.reject(refreshError);
+          } finally {
+            isRefreshing = false;
           }
         }
+
         return Promise.reject(error);
       }
     );
@@ -485,13 +588,19 @@ export default function App() {
     try {
       const res = await axios.get(`${API_URL}/meetups`);
       setMeetups(res.data);
+      if (token) {
+        const joinedRes = await axios.get(`${API_URL}/meetups/joined`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        setJoinedMeetupIds(joinedRes.data);
+      }
     } catch (err: any) {
       console.warn('Failed to fetch meetups:', err);
       const detail = err.response?.data?.detail;
       setError(Array.isArray(detail) ? detail[0].msg : (detail || 'Failed to fetch meetups'));
       setTimeout(() => setError(''), 5000);
     }
-  }, []);
+  }, [token]);
 
   useEffect(() => {
     if (token && step === 'dashboard') {
@@ -565,11 +674,20 @@ export default function App() {
       return;
     }
     try {
-      await axios.post(
-        `${API_URL}/meetups`,
-        { title, description, location, max_attendees: parseInt(maxAttendees, 10) || 10 },
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
+      if (editingMeetupId) {
+        await axios.put(
+          `${API_URL}/meetups/${editingMeetupId}`,
+          { title, description, location, max_attendees: parseInt(maxAttendees, 10) || 10 },
+          { headers: { Authorization: `Bearer ${token}` } }
+        );
+      } else {
+        await axios.post(
+          `${API_URL}/meetups`,
+          { title, description, location, max_attendees: parseInt(maxAttendees, 10) || 10 },
+          { headers: { Authorization: `Bearer ${token}` } }
+        );
+      }
+      setEditingMeetupId(null);
       setTitle('');
       setDescription('');
       setLocation('');
@@ -577,7 +695,28 @@ export default function App() {
       fetchMeetups();
     } catch (err: any) {
       const detail = err.response?.data?.detail;
-      setError(Array.isArray(detail) ? detail[0].msg : (detail || 'Failed to create meetup'));
+      setError(Array.isArray(detail) ? detail[0].msg : (detail || 'Failed to save meetup'));
+      setTimeout(() => setError(''), 3000);
+    }
+  };
+
+  const handleEdit = (meetup: MeetupData) => {
+    setEditingMeetupId(meetup.id);
+    setTitle(meetup.title);
+    setDescription(meetup.description);
+    setLocation(meetup.location);
+    setMaxAttendees(String(meetup.max_attendees));
+  };
+
+  const handleDelete = async (id: number) => {
+    try {
+      await axios.delete(`${API_URL}/meetups/${id}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      fetchMeetups();
+    } catch (err: any) {
+      const detail = err.response?.data?.detail;
+      setError(Array.isArray(detail) ? detail[0].msg : (detail || 'Failed to delete meetup'));
       setTimeout(() => setError(''), 3000);
     }
   };
@@ -593,6 +732,21 @@ export default function App() {
     } catch (err: any) {
       const detail = err.response?.data?.detail;
       setError(Array.isArray(detail) ? detail[0].msg : (detail || 'Could not join meetup'));
+      setTimeout(() => setError(''), 3000);
+    }
+  };
+
+  const handleLeave = async (id: number) => {
+    try {
+      await axios.post(
+        `${API_URL}/meetups/${id}/leave`,
+        {},
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      fetchMeetups();
+    } catch (err: any) {
+      const detail = err.response?.data?.detail;
+      setError(Array.isArray(detail) ? detail[0].msg : (detail || 'Could not leave meetup'));
       setTimeout(() => setError(''), 3000);
     }
   };
@@ -906,8 +1060,23 @@ export default function App() {
                 onPress={handleCreateMeetup}
                 activeOpacity={0.85}
               >
-                <Text style={styles.hostBtnText}>Create Meetup ✨</Text>
+                <Text style={styles.hostBtnText}>{editingMeetupId ? 'Update Meetup ✨' : 'Create Meetup ✨'}</Text>
               </TouchableOpacity>
+              {editingMeetupId && (
+                <TouchableOpacity
+                  style={[styles.hostBtn, { backgroundColor: C.bg, marginTop: 8, borderWidth: 1, borderColor: C.primary }]}
+                  onPress={() => {
+                    setEditingMeetupId(null);
+                    setTitle('');
+                    setDescription('');
+                    setLocation('');
+                    setMaxAttendees('10');
+                  }}
+                  activeOpacity={0.85}
+                >
+                  <Text style={[styles.hostBtnText, { color: C.primary }]}>Cancel Edit</Text>
+                </TouchableOpacity>
+              )}
             </View>
           </View>
         </Animated.View>
@@ -929,7 +1098,17 @@ export default function App() {
             </Animated.View>
           ) : (
             meetups.map((m, i) => (
-              <MeetupCard key={m.id} meetup={m} onJoin={handleJoin} index={i} />
+              <MeetupCard 
+                key={m.id} 
+                meetup={m} 
+                onJoin={handleJoin} 
+                onLeave={handleLeave}
+                onEdit={handleEdit} 
+                onDelete={handleDelete} 
+                index={i} 
+                currentUser={currentUser} 
+                isJoined={joinedMeetupIds.includes(m.id)}
+              />
             ))
           )}
         </Animated.View>

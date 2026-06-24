@@ -13,25 +13,21 @@ SUPABASE_ANON_KEY = os.getenv("SUPABASE_ANON_KEY")
 SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
 if not SUPABASE_SERVICE_ROLE_KEY:
     raise ValueError("SUPABASE_SERVICE_ROLE_KEY environment variable is not set")
-SUPABASE_JWT_SECRET = os.getenv("SUPABASE_JWT_SECRET")
-
-_supabase: Client = None
-_supabase_admin = None
 
 import logging
-
 logger = logging.getLogger(__name__)
 
+_supabase_admin_client = None
+
 def get_supabase_client() -> Client:
-    global _supabase, _supabase_admin
-    if _supabase is None:
-        _supabase = create_client(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
-        _supabase_admin = _supabase.auth.admin
-        logger.info("Supabase client initialized")
-    return _supabase
+    # Always create a fresh client for auth actions so session state doesn't leak across requests
+    return create_client(SUPABASE_URL, SUPABASE_ANON_KEY)
 
 def get_supabase_admin():
-    return get_supabase_client().auth.admin
+    global _supabase_admin_client
+    if _supabase_admin_client is None:
+        _supabase_admin_client = create_client(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
+    return _supabase_admin_client.auth.admin
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="supabase/login")
 
@@ -69,8 +65,12 @@ async def get_current_user_supabase(
         return user
     except HTTPException:
         raise
-    except Exception:
-        logger.error("Authentication failed", exc_info=True)
+    except Exception as e:
+        err_msg = str(e).lower()
+        if "expired" in err_msg or "invalid jwt" in err_msg:
+            logger.debug(f"Token expired for request — client should refresh")
+        else:
+            logger.error("Authentication failed", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid or expired token",
@@ -88,21 +88,48 @@ def create_supabase_user(email: str, password: str, username: str) -> dict:
         })
         logger.info(f"User registered successfully in Supabase: {username}")
         return {"user": response.user, "session": None}
-    except Exception:
+    except Exception as e:
         logger.error(f"Failed to create user {email}", exc_info=True)
+        print("====== SUPABASE ERROR ======")
+        print(repr(e))
+        print("============================")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Failed to create user"
+            detail=str(e) if "User not allowed" in str(e) else "Failed to create user"
         )
 
 
 def sign_in_supabase_user(email: str, password: str) -> dict:
+    """Sign in using direct HTTP call to avoid SDK auto-refresh threads."""
+    import httpx
     try:
-        response = get_supabase_client().auth.sign_in_with_password({
-            "email": email,
-            "password": password
-        })
-        return {"user": response.user, "session": response.session}
+        resp = httpx.post(
+            f"{SUPABASE_URL}/auth/v1/token?grant_type=password",
+            json={"email": email, "password": password},
+            headers={
+                "apikey": SUPABASE_ANON_KEY,
+                "Content-Type": "application/json",
+            },
+            timeout=10,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        
+        class _User:
+            def __init__(self, d):
+                self.id = d["id"]
+                self.email = d.get("email")
+                self.user_metadata = d.get("user_metadata", {})
+        
+        class _Session:
+            def __init__(self, d):
+                self.access_token = d["access_token"]
+                self.refresh_token = d["refresh_token"]
+                self.token_type = d.get("token_type", "bearer")
+                self.user = _User(d["user"])
+        
+        session = _Session(data)
+        return {"user": session.user, "session": session}
     except Exception:
         logger.warning(f"Failed login attempt for email: {email}")
         raise HTTPException(
@@ -112,9 +139,36 @@ def sign_in_supabase_user(email: str, password: str) -> dict:
 
 
 def refresh_supabase_session(refresh_token: str) -> dict:
+    """Refresh using direct HTTP call to avoid SDK auto-refresh threads."""
+    import httpx
     try:
-        response = get_supabase_client().auth.refresh_session(refresh_token)
-        return {"user": response.user, "session": response.session}
+        resp = httpx.post(
+            f"{SUPABASE_URL}/auth/v1/token?grant_type=refresh_token",
+            json={"refresh_token": refresh_token},
+            headers={
+                "apikey": SUPABASE_ANON_KEY,
+                "Content-Type": "application/json",
+            },
+            timeout=10,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        
+        class _User:
+            def __init__(self, d):
+                self.id = d["id"]
+                self.email = d.get("email")
+                self.user_metadata = d.get("user_metadata", {})
+        
+        class _Session:
+            def __init__(self, d):
+                self.access_token = d["access_token"]
+                self.refresh_token = d["refresh_token"]
+                self.token_type = d.get("token_type", "bearer")
+                self.user = _User(d["user"])
+        
+        session = _Session(data)
+        return {"user": session.user, "session": session}
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -123,8 +177,17 @@ def refresh_supabase_session(refresh_token: str) -> dict:
 
 
 def sign_out_supabase_user(refresh_token: str) -> None:
+    import httpx
     try:
-        get_supabase_client().auth.sign_out(refresh_token)
+        httpx.post(
+            f"{SUPABASE_URL}/auth/v1/logout",
+            json={"refresh_token": refresh_token},
+            headers={
+                "apikey": SUPABASE_ANON_KEY,
+                "Content-Type": "application/json",
+            },
+            timeout=5,
+        )
     except Exception:
         pass
 

@@ -23,6 +23,12 @@ def get_meetups(
         for meetup in meetups
     ]
 
+@router.get("/meetups/joined", response_model=list[int])
+@limiter.limit("60/minute")
+def get_joined_meetups(request: Request, current_user: User = Depends(get_current_user_supabase), db: Session = Depends(get_db)):
+    participants = db.query(MeetupParticipant).filter(MeetupParticipant.user_id == current_user.id).all()
+    return [p.meetup_id for p in participants]
+
 @router.get("/meetups/{meetup_id}", response_model=MeetupResponse)
 @limiter.limit("60/minute")
 def get_meetup(request: Request, response: Response, meetup_id: int, db: Session = Depends(get_db)):

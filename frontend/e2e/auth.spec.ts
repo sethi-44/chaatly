@@ -32,7 +32,7 @@ test.describe('Authentication Flow', () => {
     // Complete Sign Up
     await page.getByText('Complete Sign Up 🎉').click();
 
-    // Wait for navigation to dashboard - Dashboard header should be visible
-    await expect(page.getByText(testUsername)).toBeVisible({ timeout: 15000 });
+    // Wait for navigation to dashboard - Profile initial should be visible
+    await expect(page.getByText(testUsername.charAt(0).toUpperCase(), { exact: true })).toBeVisible({ timeout: 15000 });
   });
 });

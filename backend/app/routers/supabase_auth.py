@@ -333,18 +333,15 @@ def supabase_change_password(
     db: Session = Depends(get_db)
 ):
     try:
-        from app.supabase_auth import get_supabase_client
-        sign_in_result = get_supabase_client().auth.sign_in_with_password({
-            "email": current_user.email,
-            "password": body.current_password
-        })
+        sign_in_result = sign_in_supabase_user(current_user.email, body.current_password)
+        access_token = sign_in_result["session"].access_token
     except Exception:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Current password is incorrect"
         )
     
-    update_password_supabase(sign_in_result.session.access_token, body.new_password)
+    update_password_supabase(access_token, body.new_password)
     
     # Revoke all local refresh tokens for this user (Supabase invalidates sessions server-side)
     db.query(RefreshToken).filter(RefreshToken.user_id == current_user.id).delete()

@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 from app.models import User
 from app.dependencies import get_db
 from app.schemas import UserCreate, UserResponse, UserUpdate, ChangePasswordRequest
-from app.helpers import find_user, existing_user
+from app.helpers import find_user
 # from app.security import get_current_user, hash_password, verify_password  # DIY auth - commented out
 from app.supabase_auth import get_current_user_supabase
 from app.rate_limit import limiter
