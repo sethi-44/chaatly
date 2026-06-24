@@ -44,6 +44,7 @@ def create_meetup(request: Request, response: Response, meetup: MeetupCreate, cu
         title=meetup.title,
         description=meetup.description,
         location=meetup.location,
+        event_date=meetup.event_date,
         max_attendees=meetup.max_attendees,
         host_id=current_user.id
     )

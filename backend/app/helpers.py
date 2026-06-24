@@ -50,6 +50,7 @@ def meetup_to_response(
         id=meetup.id,
         title=meetup.title,
         location=meetup.location,
+        event_date=meetup.event_date,
         description=meetup.description,
         max_attendees=meetup.max_attendees,
         host=meetup.host,

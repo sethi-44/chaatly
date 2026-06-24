@@ -1,4 +1,5 @@
 from pydantic import BaseModel, Field, EmailStr
+from datetime import datetime
 class MeetupCreate(BaseModel):
     title: str = Field(
         min_length=3,
@@ -14,6 +15,8 @@ class MeetupCreate(BaseModel):
         min_length=3,
         max_length=100
     )
+
+    event_date: datetime | None = None
 
     max_attendees: int = Field(
         gt=0,
@@ -34,11 +37,15 @@ class UserCreate(BaseModel):
 class UserUpdate(BaseModel):
     username: str | None = None
     email: EmailStr | None = None
+    bio: str | None = None
+    profile_picture_url: str | None = None
 
 
 class UserResponse(BaseModel):
     username: str
     email: EmailStr
+    bio: str | None = None
+    profile_picture_url: str | None = None
 
     model_config = {
         "from_attributes": True
@@ -49,6 +56,7 @@ class MeetupResponse(BaseModel):
     title: str
     description: str | None
     location: str
+    event_date: datetime | None
     max_attendees: int
     host: UserResponse
     attendee_count: int

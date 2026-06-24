@@ -97,6 +97,8 @@ class SupabaseUserResponse(BaseModel):
     email_confirmed_at: datetime | None = None
     created_at: datetime | None = None
     user_metadata: dict | None = None
+    bio: str | None = None
+    profile_picture_url: str | None = None
 
     class Config:
         from_attributes = True
@@ -320,6 +322,8 @@ def supabase_me(
         "email_confirmed_at": supabase_user.email_confirmed_at if supabase_user else None,
         "created_at": supabase_user.created_at if supabase_user else None,
         "user_metadata": supabase_user.user_metadata if supabase_user else None,
+        "bio": current_user.bio,
+        "profile_picture_url": current_user.profile_picture_url,
     }
 
 

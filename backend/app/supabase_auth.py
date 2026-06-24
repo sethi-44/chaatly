@@ -23,11 +23,14 @@ def get_supabase_client() -> Client:
     # Always create a fresh client for auth actions so session state doesn't leak across requests
     return create_client(SUPABASE_URL, SUPABASE_ANON_KEY)
 
-def get_supabase_admin():
+def get_supabase_admin_client() -> Client:
     global _supabase_admin_client
     if _supabase_admin_client is None:
         _supabase_admin_client = create_client(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
-    return _supabase_admin_client.auth.admin
+    return _supabase_admin_client
+
+def get_supabase_admin():
+    return get_supabase_admin_client().auth.admin
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="supabase/login")
 

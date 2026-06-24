@@ -12,6 +12,7 @@ import {
   Dimensions,
   StatusBar,
   KeyboardAvoidingView,
+  Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Animated, {
@@ -23,11 +24,12 @@ import Animated, {
   useAnimatedStyle,
   withSpring,
   withRepeat,
-  withTiming,
   withSequence,
+  withTiming,
   Easing,
 } from 'react-native-reanimated';
 import axios from 'axios';
+import * as ImagePicker from 'expo-image-picker';
 import * as SecureStore from 'expo-secure-store';
 import { API_URL, C, CARD_COLORS, CARD_EMOJIS, getCardColor, getCardEmoji } from '../constants';
 
@@ -263,7 +265,8 @@ interface MeetupData {
   title: string;
   description: string | null;
   location: string;
-  host: { username: string } | null;
+  event_date?: string | null;
+  host: { username: string; profile_picture_url?: string | null; bio?: string | null } | null;
   attendee_count: number;
   max_attendees: number;
   spots_left?: number;
@@ -333,8 +336,17 @@ export function MeetupCard({
           </View>
           {/* Host avatar with gradient border effect */}
           <View style={styles.hostAvatarOuter}>
-            <View style={styles.hostAvatar}>
-              <Text style={styles.hostInitial}>{hostInitial}</Text>
+            <View style={[styles.hostAvatar, { overflow: 'hidden' }]}>
+              {meetup.host?.profile_picture_url?.startsWith('http') ? (
+                <Image 
+                  source={{ uri: meetup.host.profile_picture_url }} 
+                  style={{ width: '100%', height: '100%' }} 
+                />
+              ) : (
+                <Text style={styles.hostInitial}>
+                  {meetup.host?.profile_picture_url || hostInitial}
+                </Text>
+              )}
             </View>
           </View>
         </View>
@@ -348,6 +360,14 @@ export function MeetupCard({
         <View style={styles.cardDivider} />
 
         <View style={styles.cardDetails}>
+          {meetup.event_date && (
+            <View style={[styles.detailItem, { marginBottom: 8 }]}>
+              <Text style={styles.detailIcon}>🕒</Text>
+              <Text style={styles.detailText} numberOfLines={1}>
+                {new Date(meetup.event_date).toLocaleString(undefined, { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
+              </Text>
+            </View>
+          )}
           <View style={styles.detailItem}>
             <Text style={styles.detailIcon}>📍</Text>
             <Text style={styles.detailText} numberOfLines={1}>
@@ -416,11 +436,13 @@ type AuthStep =
   | 'register_password'
   | 'login_email'
   | 'login_password'
-  | 'dashboard';
+  | 'dashboard'
+  | 'profile';
 
 export default function App() {
   const [token, setToken] = useState('');
   const [currentUser, setCurrentUser] = useState('');
+  const [currentUserObj, setCurrentUserObj] = useState<any>(null);
   const [step, setStep] = useState<AuthStep>('landing');
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -567,7 +589,11 @@ export default function App() {
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [location, setLocation] = useState('');
+  const [eventDate, setEventDate] = useState('');
   const [maxAttendees, setMaxAttendees] = useState('10');
+  const [bio, setBio] = useState('');
+  const [avatarUrl, setAvatarUrl] = useState('');
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
 
   const fetchCurrentUser = useCallback(async () => {
     if (!token) return;
@@ -576,6 +602,9 @@ export default function App() {
         headers: { Authorization: `Bearer ${token}` },
       });
       setCurrentUser(res.data.username);
+      setCurrentUserObj(res.data);
+      setBio(res.data.bio || '');
+      setAvatarUrl(res.data.profile_picture_url || '');
     } catch (err: any) {
       console.warn('Failed to fetch user:', err);
       const detail = err.response?.data?.detail;
@@ -677,13 +706,13 @@ export default function App() {
       if (editingMeetupId) {
         await axios.put(
           `${API_URL}/meetups/${editingMeetupId}`,
-          { title, description, location, max_attendees: parseInt(maxAttendees, 10) || 10 },
+          { title, description, location, event_date: eventDate ? new Date(eventDate).toISOString() : null, max_attendees: parseInt(maxAttendees, 10) || 10 },
           { headers: { Authorization: `Bearer ${token}` } }
         );
       } else {
         await axios.post(
           `${API_URL}/meetups`,
-          { title, description, location, max_attendees: parseInt(maxAttendees, 10) || 10 },
+          { title, description, location, event_date: eventDate ? new Date(eventDate).toISOString() : null, max_attendees: parseInt(maxAttendees, 10) || 10 },
           { headers: { Authorization: `Bearer ${token}` } }
         );
       }
@@ -691,6 +720,7 @@ export default function App() {
       setTitle('');
       setDescription('');
       setLocation('');
+      setEventDate('');
       setMaxAttendees('10');
       fetchMeetups();
     } catch (err: any) {
@@ -705,6 +735,7 @@ export default function App() {
     setTitle(meetup.title);
     setDescription(meetup.description);
     setLocation(meetup.location);
+    setEventDate(meetup.event_date ? new Date(meetup.event_date).toISOString().slice(0, 16) : '');
     setMaxAttendees(String(meetup.max_attendees));
   };
 
@@ -718,6 +749,92 @@ export default function App() {
       const detail = err.response?.data?.detail;
       setError(Array.isArray(detail) ? detail[0].msg : (detail || 'Failed to delete meetup'));
       setTimeout(() => setError(''), 3000);
+    }
+  };
+
+  const handleUpdateProfile = async () => {
+    try {
+      setLoading(true);
+      await axios.put(
+        `${API_URL}/users/me`,
+        { bio, profile_picture_url: avatarUrl },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      await fetchCurrentUser();
+      setStep('dashboard');
+    } catch (err: any) {
+      const detail = err.response?.data?.detail;
+      setError(Array.isArray(detail) ? detail[0].msg : (detail || 'Failed to update profile'));
+      setTimeout(() => setError(''), 3000);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handlePickImage = async () => {
+    try {
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.8,
+      });
+
+      if (!result.canceled && result.assets[0]) {
+        const asset = result.assets[0];
+        
+        if (asset.fileSize && asset.fileSize > 5 * 1024 * 1024) {
+          setError('File size must be under 5MB');
+          setTimeout(() => setError(''), 3000);
+          return;
+        }
+
+        const formData = new FormData();
+        
+        if (Platform.OS === 'web') {
+          const res = await fetch(asset.uri);
+          const blob = await res.blob();
+          formData.append('file', blob, asset.fileName || 'profile.jpg');
+        } else {
+          formData.append('file', {
+            uri: asset.uri,
+            name: asset.fileName || 'profile.jpg',
+            type: asset.mimeType || 'image/jpeg',
+          } as any);
+        }
+
+        setUploadingAvatar(true);
+        await axios.post(`${API_URL}/users/profile-picture`, formData, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'multipart/form-data',
+          },
+        });
+        
+        await fetchCurrentUser();
+      }
+    } catch (err: any) {
+      console.warn('Failed to upload image:', err);
+      const detail = err.response?.data?.detail;
+      setError(Array.isArray(detail) ? detail[0].msg : (detail || 'Failed to upload image'));
+      setTimeout(() => setError(''), 3000);
+    } finally {
+      setUploadingAvatar(false);
+    }
+  };
+
+  const handleRemoveImage = async () => {
+    try {
+      setUploadingAvatar(true);
+      await axios.delete(`${API_URL}/users/profile-picture`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      await fetchCurrentUser();
+    } catch (err: any) {
+      setError('Failed to remove picture');
+      setTimeout(() => setError(''), 3000);
+    } finally {
+      setUploadingAvatar(false);
     }
   };
 
@@ -970,6 +1087,107 @@ export default function App() {
   };
 
   // ── Dashboard (Airbnb Spacing + Partiful Aesthetic) ────────────────
+  const renderProfile = () => (
+    <ScrollView style={styles.dashboardContainer} contentContainerStyle={styles.dashboardContent}>
+      <Animated.View entering={FadeInDown} style={styles.dashHeader}>
+        <View style={styles.dashHeaderLeft}>
+          <Text style={styles.dashLogoEmoji}>👤</Text>
+          <Text style={styles.dashLogo}>My Profile</Text>
+        </View>
+        <TouchableOpacity
+          style={styles.profileBtn}
+          onPress={() => setStep('dashboard')}
+          activeOpacity={0.8}
+        >
+          <Text style={styles.profileBtnInitial}>X</Text>
+        </TouchableOpacity>
+      </Animated.View>
+      <View style={styles.dashDivider} />
+
+      {error ? (
+        <Animated.View entering={FadeInDown} style={styles.errorBanner}>
+          <Text style={styles.errorText}>{error}</Text>
+        </Animated.View>
+      ) : null}
+
+      <View style={styles.card}>
+        <Text style={styles.authTitle}>Edit Profile</Text>
+        
+        {/* Profile Picture Upload Section */}
+        <View style={{ alignItems: 'center', marginBottom: 20 }}>
+          <View style={[styles.hostAvatar, { width: 100, height: 100, borderRadius: 50, overflow: 'hidden', marginBottom: 12, backgroundColor: C.border }]}>
+            {currentUserObj?.profile_picture_url ? (
+              <Image 
+                source={{ uri: currentUserObj.profile_picture_url }} 
+                style={{ width: '100%', height: '100%' }} 
+              />
+            ) : (
+              <Text style={[styles.hostInitial, { fontSize: 40 }]}>
+                {currentUser?.charAt(0)?.toUpperCase() || 'U'}
+              </Text>
+            )}
+          </View>
+          <View style={{ flexDirection: 'row', gap: 10 }}>
+            <TouchableOpacity 
+              style={[styles.primaryBtn, { paddingVertical: 8, paddingHorizontal: 16 }]} 
+              onPress={handlePickImage}
+              disabled={uploadingAvatar}
+            >
+              {uploadingAvatar ? (
+                <ActivityIndicator color={C.text} size="small" />
+              ) : (
+                <Text style={[styles.primaryBtnText, { fontSize: 14 }]}>Upload</Text>
+              )}
+            </TouchableOpacity>
+            {currentUserObj?.profile_picture_url && (
+              <TouchableOpacity 
+                style={[styles.primaryBtn, { backgroundColor: C.bg, borderWidth: 1, borderColor: C.border, paddingVertical: 8, paddingHorizontal: 16 }]} 
+                onPress={handleRemoveImage}
+                disabled={uploadingAvatar}
+              >
+                <Text style={[styles.primaryBtnText, { color: C.textMuted, fontSize: 14 }]}>Remove</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        </View>
+
+        <TextInput
+          style={[styles.hostInput, styles.hostInputMultiline]}
+          placeholder="Write a short bio..."
+          placeholderTextColor={C.textMuted}
+          value={bio}
+          onChangeText={setBio}
+          multiline
+          numberOfLines={4}
+          textAlignVertical="top"
+        />
+        <PrimaryButton label="Save Profile" onPress={handleUpdateProfile} loading={loading} />
+        <TouchableOpacity 
+          style={[styles.primaryBtn, { backgroundColor: C.surface, marginTop: 12, borderWidth: 1, borderColor: '#fee2e2' }]} 
+          onPress={handleLogout}
+        >
+          <Text style={[styles.primaryBtnText, { color: '#ef4444' }]}>Log Out</Text>
+        </TouchableOpacity>
+      </View>
+
+      <Text style={[styles.sectionTitle, { marginTop: 24 }]}>My Meetups</Text>
+      {meetups
+        .filter(m => m.host?.username === currentUser || joinedMeetupIds.includes(m.id))
+        .map((meetup, index) => (
+          <MeetupCard
+            key={meetup.id}
+            meetup={meetup}
+            index={index}
+            currentUser={currentUser}
+            onJoin={handleJoin}
+            onLeave={handleLeave}
+            onEdit={handleEdit}
+            onDelete={handleDelete}
+          />
+        ))}
+    </ScrollView>
+  );
+
   const renderDashboard = () => (
     <View style={styles.dashboardContainer}>
       {/* Dashboard Header */}
@@ -980,12 +1198,19 @@ export default function App() {
         </View>
         <TouchableOpacity
           style={styles.profileBtn}
-          onPress={handleLogout}
+          onPress={() => setStep('profile')}
           activeOpacity={0.8}
         >
-          <Text style={styles.profileBtnInitial}>
-            {currentUser?.charAt(0)?.toUpperCase() || 'U'}
-          </Text>
+          {currentUserObj?.profile_picture_url?.startsWith('http') ? (
+            <Image 
+              source={{ uri: currentUserObj.profile_picture_url }} 
+              style={{ width: '100%', height: '100%', borderRadius: 22 }} 
+            />
+          ) : (
+            <Text style={styles.profileBtnInitial}>
+              {currentUserObj?.profile_picture_url || currentUser?.charAt(0)?.toUpperCase() || 'U'}
+            </Text>
+          )}
         </TouchableOpacity>
       </Animated.View>
       <View style={styles.dashDivider} />
@@ -1043,6 +1268,13 @@ export default function App() {
                 value={location}
                 onChangeText={setLocation}
               />
+              <TextInput
+                style={styles.hostInput}
+                placeholder="🕒 When? (e.g. 2026-06-25T18:00)"
+                placeholderTextColor={C.textMuted}
+                value={eventDate}
+                onChangeText={setEventDate}
+              />
 
               <View style={styles.hostAttendeesRow}>
                 <Text style={styles.hostAttendeesLabel}>👥 Max attendees</Text>
@@ -1070,6 +1302,7 @@ export default function App() {
                     setTitle('');
                     setDescription('');
                     setLocation('');
+                    setEventDate('');
                     setMaxAttendees('10');
                   }}
                   activeOpacity={0.85}
@@ -1119,7 +1352,7 @@ export default function App() {
   return (
     <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
       <StatusBar barStyle="dark-content" backgroundColor={C.bg} />
-      {step === 'dashboard' && token ? renderDashboard() : renderOnboarding()}
+      {step === 'dashboard' && token ? renderDashboard() : step === 'profile' && token ? renderProfile() : renderOnboarding()}
     </SafeAreaView>
   );
 }

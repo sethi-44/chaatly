@@ -1,11 +1,12 @@
-from fastapi import HTTPException, Depends, APIRouter, Request, Response, status, Query
+from fastapi import HTTPException, Depends, APIRouter, Request, Response, status, Query, UploadFile, File
+import mimetypes
 from sqlalchemy.orm import Session
 from app.models import User
 from app.dependencies import get_db
 from app.schemas import UserCreate, UserResponse, UserUpdate, ChangePasswordRequest
 from app.helpers import find_user
 # from app.security import get_current_user, hash_password, verify_password  # DIY auth - commented out
-from app.supabase_auth import get_current_user_supabase
+from app.supabase_auth import get_current_user_supabase, get_supabase_admin_client
 from app.rate_limit import limiter
 
 router = APIRouter()
@@ -99,9 +100,81 @@ def update_user(request: Request, response: Response, user: UserUpdate, current_
             )
         current_user.email = user.email
 
+    if user.bio is not None:
+        current_user.bio = user.bio
+
+    if user.profile_picture_url is not None:
+        current_user.profile_picture_url = user.profile_picture_url
+
     db.commit()
     db.refresh(current_user)
     return current_user
+
+@router.post("/users/profile-picture")
+@limiter.limit("5/minute")
+async def upload_profile_picture(
+    request: Request,
+    file: UploadFile = File(...),
+    current_user: User = Depends(get_current_user_supabase),
+    db: Session = Depends(get_db)
+):
+    ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp"]
+    if file.content_type not in ALLOWED_TYPES:
+        raise HTTPException(status_code=400, detail="Invalid file type. Only JPEG, PNG, and WebP are allowed.")
+    
+    # Check file size (5MB limit)
+    file.file.seek(0, 2)
+    file_size = file.file.tell()
+    file.file.seek(0)
+    if file_size > 5 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="File size exceeds 5MB limit.")
+        
+    ext = mimetypes.guess_extension(file.content_type) or ".jpg"
+    filename = f"{current_user.id}{ext}"
+    
+    supabase = get_supabase_admin_client()
+    
+    # Read file content
+    content = await file.read()
+    
+    try:
+        supabase.storage.from_("profile-pictures").upload(
+            filename,
+            content,
+            {"content-type": file.content_type, "upsert": "true"}
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to upload image: {str(e)}")
+        
+    public_url = supabase.storage.from_("profile-pictures").get_public_url(filename)
+    
+    current_user.profile_picture_url = public_url
+    db.commit()
+    
+    return {"message": "Profile picture uploaded successfully", "profile_picture_url": public_url}
+
+@router.delete("/users/profile-picture")
+@limiter.limit("5/minute")
+def delete_profile_picture(
+    request: Request,
+    current_user: User = Depends(get_current_user_supabase),
+    db: Session = Depends(get_db)
+):
+    if not current_user.profile_picture_url:
+        return {"message": "No profile picture to delete"}
+        
+    filename = current_user.profile_picture_url.split("/")[-1]
+    
+    supabase = get_supabase_admin_client()
+    try:
+        supabase.storage.from_("profile-pictures").remove([filename])
+    except Exception:
+        pass # Ignore if it doesn't exist
+        
+    current_user.profile_picture_url = None
+    db.commit()
+    
+    return {"message": "Profile picture deleted successfully"}
 
 # @router.post("/users/me/change-password")  # DIY auth - commented out, use /supabase/change-password
 # @limiter.limit("10/minute")

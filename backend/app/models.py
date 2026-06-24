@@ -1,3 +1,4 @@
+from sqlalchemy import DateTime
 from sqlalchemy import (
     Column,
     Integer,
@@ -37,6 +38,11 @@ class Meetup(Base):
         String(500)
     )
 
+    event_date = Column(
+        DateTime(timezone=True),
+        nullable=True
+    )
+
     location = Column(
         String(100),
         nullable=False
@@ -69,6 +75,8 @@ class User(Base):
     username = Column(String(50), unique=True, nullable=False)
     email = Column(String(100), unique=True, nullable=False)
     password_hash = Column(String(255), nullable=False)
+    bio = Column(String(500), nullable=True)
+    profile_picture_url = Column(String(255), nullable=True)
     is_verified = Column(Boolean, default=False)
     is_admin = Column(Boolean, default=False, nullable=False)
 
