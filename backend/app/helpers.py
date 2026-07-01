@@ -53,7 +53,9 @@ def meetup_to_response(
         event_date=meetup.event_date,
         description=meetup.description,
         max_attendees=meetup.max_attendees,
+        image_url=meetup.image_url,
         host=meetup.host,
         attendee_count=attendee_count,
-        spots_left=meetup.max_attendees - attendee_count
+        spots_left=meetup.max_attendees - attendee_count,
+        photos=meetup.photos
     )

@@ -5,9 +5,11 @@ from sqlalchemy import (
     String,
     CheckConstraint,
     ForeignKey,
-    Boolean
+    Boolean,
+    Index
 )
 from sqlalchemy.orm import DeclarativeBase, relationship
+from sqlalchemy.sql import func
 
 
 class Base(DeclarativeBase):
@@ -53,6 +55,11 @@ class Meetup(Base):
         nullable=False
     )
 
+    image_url = Column(
+        String(255),
+        nullable=True
+    )
+
     host_id = Column(
         String(36),
         ForeignKey("users.id"),
@@ -63,6 +70,12 @@ class Meetup(Base):
 
     participants = relationship(
         "MeetupParticipant",
+        back_populates="meetup",
+        cascade="all, delete-orphan"
+    )
+
+    discussion_messages = relationship(
+        "DiscussionMessage",
         back_populates="meetup",
         cascade="all, delete-orphan"
     )
@@ -114,3 +127,39 @@ class RefreshToken(Base):
         ForeignKey("users.id"),
         nullable=False
     )
+
+class DiscussionMessage(Base):
+    __tablename__ = "discussion_messages"
+
+    __table_args__ = (
+        Index("ix_discussion_messages_meetup_id", "meetup_id"),
+        Index("ix_discussion_messages_user_id", "user_id"),
+        Index("ix_discussion_messages_created_at", "created_at"),
+        Index("ix_discussion_messages_parent_message_id", "parent_message_id"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    meetup_id = Column(Integer, ForeignKey("meetups.id"), nullable=False)
+    user_id = Column(String(36), ForeignKey("users.id"), nullable=False)
+    parent_message_id = Column(Integer, ForeignKey("discussion_messages.id"), nullable=True)
+    content = Column(String(500), nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+
+    meetup = relationship("Meetup", back_populates="discussion_messages")
+    user = relationship("User")
+    replies = relationship("DiscussionMessage", back_populates="parent", cascade="all, delete-orphan")
+    parent = relationship("DiscussionMessage", back_populates="replies", remote_side=[id])
+
+class MeetupPhoto(Base):
+    __tablename__ = "meetup_photos"
+    
+    id = Column(Integer, primary_key=True)
+    image_url = Column(String(255), nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    
+    meetup_id = Column(Integer, ForeignKey("meetups.id", ondelete="CASCADE"), nullable=False)
+    user_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    
+    meetup = relationship("Meetup", backref="photos")
+    uploader = relationship("User")

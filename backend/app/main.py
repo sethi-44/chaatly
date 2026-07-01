@@ -24,7 +24,7 @@ if sentry_dsn:
     )
     logger.info("Sentry initialized")
 
-from app.routers import meetups, users, supabase_auth
+from app.routers import meetups, users, supabase_auth, discussion
 from app.rate_limit import setup_rate_limiting, limiter
 from app.csrf import CSRFMiddleware, generate_csrf_token, set_csrf_cookie
 
@@ -51,6 +51,7 @@ app.add_middleware(CSRFMiddleware)
 app.include_router(meetups.router)
 app.include_router(users.router)
 app.include_router(supabase_auth.router)
+app.include_router(discussion.router)
 
 @app.get("/")
 @limiter.limit("60/minute")

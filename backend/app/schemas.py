@@ -51,6 +51,16 @@ class UserResponse(BaseModel):
         "from_attributes": True
     }
 
+class MeetupPhotoResponse(BaseModel):
+    id: int
+    image_url: str
+    user_id: str
+    created_at: datetime
+    
+    model_config = {
+        "from_attributes": True
+    }
+
 class MeetupResponse(BaseModel):
     id: int
     title: str
@@ -58,9 +68,11 @@ class MeetupResponse(BaseModel):
     location: str
     event_date: datetime | None
     max_attendees: int
+    image_url: str | None = None
     host: UserResponse
     attendee_count: int
     spots_left: int
+    photos: list[MeetupPhotoResponse] = []
 
     model_config = {
         "from_attributes": True
@@ -91,3 +103,45 @@ class ResetPasswordRequest(BaseModel):
         min_length=8,
         max_length=128
     )
+
+class DiscussionMessageCreate(BaseModel):
+    content: str = Field(min_length=1, max_length=500)
+
+class DiscussionMessageUpdate(BaseModel):
+    content: str = Field(min_length=1, max_length=500)
+
+class DiscussionAuthor(BaseModel):
+    id: str
+    username: str
+    profile_picture_url: str | None = None
+
+    model_config = {"from_attributes": True}
+
+class DiscussionReplyResponse(BaseModel):
+    id: int
+    meetup_id: int
+    content: str
+    created_at: datetime
+    updated_at: datetime
+    author: DiscussionAuthor
+
+    model_config = {"from_attributes": True}
+
+class DiscussionMessageResponse(BaseModel):
+    id: int
+    meetup_id: int
+    content: str
+    created_at: datetime
+    updated_at: datetime
+    author: DiscussionAuthor
+    reply_count: int
+    replies: list[DiscussionReplyResponse] = []
+
+    model_config = {"from_attributes": True}
+
+class DiscussionPaginatedResponse(BaseModel):
+    messages: list[DiscussionMessageResponse]
+    page: int
+    pages: int
+    limit: int
+    total: int

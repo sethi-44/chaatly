@@ -1,6 +1,7 @@
 import { Tabs } from "expo-router";
 import { Text, View, StyleSheet, Platform } from "react-native";
 import { ACTIVE_COLOR, INACTIVE_COLOR, TAB_BAR_BG, TAB_BAR_BORDER } from '../constants';
+import { MeetupsProvider } from '../context/MeetupsContext';
 
 function TabIcon({
   emoji,
@@ -26,7 +27,8 @@ function TabIcon({
 
 export default function RootLayout() {
   return (
-    <Tabs
+    <MeetupsProvider>
+      <Tabs
       screenOptions={{
         headerShown: false,
         tabBarStyle: styles.tabBar,
@@ -69,6 +71,7 @@ export default function RootLayout() {
         }}
       />
     </Tabs>
+    </MeetupsProvider>
   );
 }
 

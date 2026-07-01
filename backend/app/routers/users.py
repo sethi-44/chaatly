@@ -31,6 +31,89 @@ def me(
 ):
     return current_user
 
+@router.delete("/users/me")
+@limiter.limit("5/minute")
+def delete_me(
+    request: Request,
+    current_user: User = Depends(get_current_user_supabase),
+    db: Session = Depends(get_db)
+):
+    supabase = get_supabase_admin_client()
+    from app.models import Meetup, MeetupParticipant, DiscussionMessage, RefreshToken, MeetupPhoto
+
+    # 1. Profile Picture Cleanup
+    if current_user.profile_picture_url:
+        try:
+            filename = current_user.profile_picture_url.split("/")[-1]
+            supabase.storage.from_("profile-pictures").remove([filename])
+        except Exception:
+            pass
+            
+    # 2. Photos uploaded by user (cleanup storage)
+    user_photos = db.query(MeetupPhoto).filter(MeetupPhoto.user_id == current_user.id).all()
+    if user_photos:
+        try:
+            filenames = ["/".join(p.image_url.split("/")[-2:]) for p in user_photos]
+            supabase.storage.from_("meetup-gallery").remove(filenames)
+        except Exception:
+            pass
+
+    # 3. Hosted Meetups Cleanup (storage)
+    hosted_meetups = db.query(Meetup).filter(Meetup.host_id == current_user.id).all()
+    hosted_meetup_ids = [m.id for m in hosted_meetups]
+    
+    if hosted_meetups:
+        meetup_image_filenames = [m.image_url.split("/")[-1] for m in hosted_meetups if m.image_url]
+        if meetup_image_filenames:
+            try:
+                supabase.storage.from_("meetup-images").remove(meetup_image_filenames)
+            except Exception:
+                pass
+                
+        # Photos in these meetups uploaded by others
+        other_photos = db.query(MeetupPhoto).filter(
+            MeetupPhoto.meetup_id.in_(hosted_meetup_ids),
+            MeetupPhoto.user_id != current_user.id
+        ).all()
+        if other_photos:
+            try:
+                gallery_filenames = ["/".join(p.image_url.split("/")[-2:]) for p in other_photos]
+                supabase.storage.from_("meetup-gallery").remove(gallery_filenames)
+            except Exception:
+                pass
+
+    # 4. Database cleanup (order matters due to foreign keys)
+    db.query(RefreshToken).filter(RefreshToken.user_id == current_user.id).delete(synchronize_session=False)
+    
+    user_top_level = db.query(DiscussionMessage).filter(
+        DiscussionMessage.user_id == current_user.id, 
+        DiscussionMessage.parent_message_id.is_(None)
+    ).all()
+    if user_top_level:
+        top_ids = [m.id for m in user_top_level]
+        db.query(DiscussionMessage).filter(DiscussionMessage.parent_message_id.in_(top_ids)).delete(synchronize_session=False)
+
+    db.query(DiscussionMessage).filter(DiscussionMessage.user_id == current_user.id).delete(synchronize_session=False)
+    db.query(MeetupPhoto).filter(MeetupPhoto.user_id == current_user.id).delete(synchronize_session=False)
+    db.query(MeetupParticipant).filter(MeetupParticipant.user_id == current_user.id).delete(synchronize_session=False)
+    
+    if hosted_meetup_ids:
+        db.query(MeetupPhoto).filter(MeetupPhoto.meetup_id.in_(hosted_meetup_ids)).delete(synchronize_session=False)
+        db.query(DiscussionMessage).filter(DiscussionMessage.meetup_id.in_(hosted_meetup_ids)).delete(synchronize_session=False)
+        db.query(MeetupParticipant).filter(MeetupParticipant.meetup_id.in_(hosted_meetup_ids)).delete(synchronize_session=False)
+        db.query(Meetup).filter(Meetup.host_id == current_user.id).delete(synchronize_session=False)
+
+    db.delete(current_user)
+    db.commit()
+
+    # 5. Delete from Supabase Auth
+    try:
+        supabase.auth.admin.delete_user(current_user.id)
+    except Exception as e:
+        print(f"Failed to delete from Supabase Auth: {e}")
+
+    return {"message": "Account deleted successfully"}
+
 # @router.post("/users", status_code=201, response_model=UserResponse)  # DIY auth - commented out, use /supabase/register
 # @limiter.limit("10/minute")
 # def create_user(request: Request, user: UserCreate, db: Session = Depends(get_db)):

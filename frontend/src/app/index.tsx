@@ -13,6 +13,8 @@ import {
   StatusBar,
   KeyboardAvoidingView,
   Image,
+  Alert,
+  Modal,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Animated, {
@@ -32,6 +34,8 @@ import axios from 'axios';
 import * as ImagePicker from 'expo-image-picker';
 import * as SecureStore from 'expo-secure-store';
 import { API_URL, C, CARD_COLORS, CARD_EMOJIS, getCardColor, getCardEmoji } from '../constants';
+import MeetupDiscussion from '../components/MeetupDiscussion';
+import { useMeetups } from '../context/MeetupsContext';
 
 const setStorageItemAsync = async (key: string, value: string) => {
   if (Platform.OS === 'web') {
@@ -260,7 +264,14 @@ export function PrimaryButton({
   );
 }
 
-interface MeetupData {
+export interface MeetupPhotoResponse {
+  id: number;
+  image_url: string;
+  user_id: string;
+  created_at: string;
+}
+
+export interface MeetupData {
   id: number;
   title: string;
   description: string | null;
@@ -270,6 +281,8 @@ interface MeetupData {
   attendee_count: number;
   max_attendees: number;
   spots_left?: number;
+  image_url?: string | null;
+  photos?: MeetupPhotoResponse[];
 }
 
 // ── Meetup Card (Partiful Celebratory + Airbnb Spacing) ──────────────
@@ -281,6 +294,8 @@ export function MeetupCard({
   onDelete,
   index,
   currentUser,
+  currentUserObj,
+  token,
   isJoined,
 }: {
   meetup: MeetupData;
@@ -290,6 +305,8 @@ export function MeetupCard({
   onDelete?: (id: number) => void;
   index: number;
   currentUser: string;
+  currentUserObj: any;
+  token: string;
   isJoined?: boolean;
 }) {
   const hostInitial = meetup.host?.username?.charAt(0)?.toUpperCase() || '?';
@@ -298,6 +315,12 @@ export function MeetupCard({
   const totalSpots = meetup.max_attendees || 10;
   const isFull = spotsLeft <= 0;
 
+  const [showDiscussion, setShowDiscussion] = useState(false);
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  const isHostOrParticipant = isHost || !!isJoined;
+
+  const { addPhoto, removePhoto } = useMeetups();
+
   const bgColor = getCardColor(index);
   const emoji = getCardEmoji(index);
 
@@ -305,6 +328,72 @@ export function MeetupCard({
   const joinAnimStyle = useAnimatedStyle(() => ({
     transform: [{ scale: joinScale.value }],
   }));
+
+  const handleUploadPhoto = async () => {
+    try {
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        quality: 0.8,
+      });
+
+      if (!result.canceled && result.assets[0]) {
+        const asset = result.assets[0];
+        
+        if (asset.fileSize && asset.fileSize > 5 * 1024 * 1024) {
+          if (Platform.OS === 'web') window.alert('File size must be under 5MB');
+          else Alert.alert('Error', 'File size must be under 5MB');
+          return;
+        }
+
+        const formData = new FormData();
+        
+        if (Platform.OS === 'web') {
+          const res = await fetch(asset.uri);
+          const blob = await res.blob();
+          formData.append('file', blob, asset.fileName || 'photo.jpg');
+        } else {
+          formData.append('file', {
+            uri: asset.uri,
+            name: asset.fileName || 'photo.jpg',
+            type: asset.mimeType || 'image/jpeg',
+          } as any);
+        }
+
+        setUploadingPhoto(true);
+        const res = await axios.post(`${API_URL}/meetups/${meetup.id}/photos`, formData, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'multipart/form-data',
+          },
+        });
+        // Optimistic UI update
+        if (res.data) {
+          addPhoto(meetup.id, res.data);
+        }
+      }
+    } catch (err) {
+      console.warn('Failed to upload photo:', err);
+      if (Platform.OS === 'web') window.alert('Failed to upload photo');
+      else Alert.alert('Error', 'Failed to upload photo');
+    } finally {
+      setUploadingPhoto(false);
+    }
+  };
+
+  const handleDeletePhoto = async (photoId: number) => {
+    // Optimistic UI delete
+    removePhoto(photoId);
+    try {
+      await axios.delete(`${API_URL}/meetups/${meetup.id}/photos/${photoId}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+    } catch (err) {
+      console.warn('Failed to delete photo:', err);
+      if (Platform.OS === 'web') window.alert('Failed to delete photo');
+      else Alert.alert('Error', 'Failed to delete photo');
+    }
+  };
 
   return (
     <Animated.View
@@ -320,8 +409,12 @@ export function MeetupCard({
       </View>
 
       {/* Colorful emoji header band */}
-      <View style={[styles.cardGraphic, { backgroundColor: bgColor }]}>
-        <Text style={styles.cardGraphicEmoji}>{emoji}</Text>
+      <View style={[styles.cardGraphic, { backgroundColor: bgColor, overflow: 'hidden', height: meetup.image_url ? 150 : 100 }]}>
+        {meetup.image_url ? (
+          <Image source={{ uri: meetup.image_url }} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
+        ) : (
+          <Text style={styles.cardGraphicEmoji}>{emoji}</Text>
+        )}
       </View>
 
       <View style={styles.cardContent}>
@@ -423,6 +516,68 @@ export function MeetupCard({
             </TouchableOpacity>
           )}
         </Animated.View>
+
+        {/* Gallery Section */}
+        {((meetup.photos && meetup.photos.length > 0) || isHostOrParticipant) && (
+          <View style={{ marginTop: 24, marginBottom: 8 }}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+              <Text style={{ fontSize: 18, fontWeight: '800', color: C.text }}>Gallery</Text>
+              {isHostOrParticipant && (
+                <TouchableOpacity onPress={handleUploadPhoto} disabled={uploadingPhoto}>
+                  {uploadingPhoto ? (
+                    <ActivityIndicator size="small" color={C.primary} />
+                  ) : (
+                    <Text style={{ color: C.primary, fontWeight: '700' }}>+ Upload Photo</Text>
+                  )}
+                </TouchableOpacity>
+              )}
+            </View>
+            {meetup.photos && meetup.photos.length > 0 ? (
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 12, paddingBottom: 4 }}>
+                {meetup.photos.map(photo => (
+                  <View key={photo.id} style={{ position: 'relative', marginRight: 12 }}>
+                    <Image source={{ uri: photo.image_url }} style={{ width: 100, height: 100, borderRadius: 16, backgroundColor: C.border }} />
+                    {(photo.user_id === currentUserObj?.id || isHost) && (
+                      <TouchableOpacity 
+                        style={{ position: 'absolute', top: 6, right: 6, backgroundColor: 'rgba(0,0,0,0.5)', borderRadius: 12, width: 24, height: 24, alignItems: 'center', justifyContent: 'center' }}
+                        onPress={() => handleDeletePhoto(photo.id)}
+                      >
+                        <Text style={{ color: '#fff', fontSize: 12, fontWeight: 'bold' }}>✕</Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                ))}
+              </ScrollView>
+            ) : (
+              <Text style={{ color: C.textMuted, fontSize: 15 }}>No photos yet. Be the first to upload!</Text>
+            )}
+          </View>
+        )}
+
+        {/* Discussion Toggle */}
+        {token && (
+          <TouchableOpacity
+            style={styles.discussionToggle}
+            onPress={() => setShowDiscussion(!showDiscussion)}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.discussionToggleIcon}>💬</Text>
+            <Text style={styles.discussionToggleText}>
+              {showDiscussion ? 'Hide Discussion' : 'Discussion'}
+            </Text>
+          </TouchableOpacity>
+        )}
+
+        {/* Discussion Section */}
+        {showDiscussion && token && currentUserObj?.id && (
+          <MeetupDiscussion
+            meetupId={meetup.id}
+            token={token}
+            currentUserId={currentUserObj.id}
+            isHost={isHost}
+            isHostOrParticipant={isHostOrParticipant}
+          />
+        )}
       </View>
     </Animated.View>
   );
@@ -440,6 +595,7 @@ type AuthStep =
   | 'profile';
 
 export default function App() {
+  const { meetups, joinedMeetupIds, setToken: setContextToken, setCurrentUserId, refreshMeetups, addMeetup, updateMeetup, removeMeetup, addParticipant, removeParticipant, loadMoreMeetups, hasMoreMeetups, loadingMore } = useMeetups();
   const [token, setToken] = useState('');
   const [currentUser, setCurrentUser] = useState('');
   const [currentUserObj, setCurrentUserObj] = useState<any>(null);
@@ -448,7 +604,7 @@ export default function App() {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
   const [editingMeetupId, setEditingMeetupId] = useState<number | null>(null);
-  const [joinedMeetupIds, setJoinedMeetupIds] = useState<number[]>([]);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   const handleLogout = async () => {
     try {
@@ -464,7 +620,29 @@ export default function App() {
       setToken('');
       setCurrentUser('');
       setStep('landing');
+      setContextToken(null);
     }
+  };
+
+  const handleConfirmDeleteAccount = async () => {
+    try {
+      setShowDeleteConfirm(false);
+      setLoading(true);
+      await axios.delete(`${API_URL}/users/me`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      await handleLogout();
+    } catch (err: any) {
+      const detail = err.response?.data?.detail;
+      setError(Array.isArray(detail) ? detail[0].msg : (detail || 'Failed to delete account'));
+      setTimeout(() => setError(''), 3000);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDeleteAccount = () => {
+    setShowDeleteConfirm(true);
   };
 
   useEffect(() => {
@@ -566,6 +744,7 @@ export default function App() {
         console.log("Loaded:", storedToken);
         if (storedToken) {
           setToken(storedToken);
+          setContextToken(storedToken);
           setStep('dashboard');
         }
       } catch (e) {
@@ -585,7 +764,6 @@ export default function App() {
   const [password, setPassword] = useState('');
 
   // Dashboard fields
-  const [meetups, setMeetups] = useState<MeetupData[]>([]);
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [location, setLocation] = useState('');
@@ -594,6 +772,8 @@ export default function App() {
   const [bio, setBio] = useState('');
   const [avatarUrl, setAvatarUrl] = useState('');
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
+  const [meetupImageUri, setMeetupImageUri] = useState<string | null>(null);
+  const [uploadingMeetupImage, setUploadingMeetupImage] = useState(false);
 
   const fetchCurrentUser = useCallback(async () => {
     if (!token) return;
@@ -603,6 +783,7 @@ export default function App() {
       });
       setCurrentUser(res.data.username);
       setCurrentUserObj(res.data);
+      setCurrentUserId(res.data.id);
       setBio(res.data.bio || '');
       setAvatarUrl(res.data.profile_picture_url || '');
     } catch (err: any) {
@@ -613,36 +794,18 @@ export default function App() {
     }
   }, [token]);
 
-  const fetchMeetups = useCallback(async () => {
-    try {
-      const res = await axios.get(`${API_URL}/meetups`);
-      setMeetups(res.data);
-      if (token) {
-        const joinedRes = await axios.get(`${API_URL}/meetups/joined`, {
-          headers: { Authorization: `Bearer ${token}` }
-        });
-        setJoinedMeetupIds(joinedRes.data);
-      }
-    } catch (err: any) {
-      console.warn('Failed to fetch meetups:', err);
-      const detail = err.response?.data?.detail;
-      setError(Array.isArray(detail) ? detail[0].msg : (detail || 'Failed to fetch meetups'));
-      setTimeout(() => setError(''), 5000);
-    }
-  }, [token]);
-
   useEffect(() => {
     if (token && step === 'dashboard') {
-      fetchMeetups();
+      refreshMeetups();
       fetchCurrentUser();
     }
-  }, [token, step, fetchMeetups, fetchCurrentUser]);
+  }, [token, step]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    await fetchMeetups();
+    await refreshMeetups();
     setRefreshing(false);
-  }, [fetchMeetups]);
+  }, [refreshMeetups]);
 
   const handleRegister = async () => {
     console.log("Register clicked");
@@ -652,6 +815,7 @@ export default function App() {
       const res = await axios.post(`${API_URL}/supabase/register`, { username, email, password });
       console.log("Backend response:", res.data);
       setToken(res.data.access_token);
+      setContextToken(res.data.access_token);
       console.log("Token set in state");
       
       await setStorageItemAsync('userToken', res.data.access_token);
@@ -681,6 +845,7 @@ export default function App() {
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       });
       setToken(res.data.access_token);
+      setContextToken(res.data.access_token);
       
       await setStorageItemAsync('userToken', res.data.access_token);
       if (res.data.refresh_token) {
@@ -703,26 +868,61 @@ export default function App() {
       return;
     }
     try {
+      let meetupId = editingMeetupId;
       if (editingMeetupId) {
-        await axios.put(
+        const res = await axios.put(
           `${API_URL}/meetups/${editingMeetupId}`,
           { title, description, location, event_date: eventDate ? new Date(eventDate).toISOString() : null, max_attendees: parseInt(maxAttendees, 10) || 10 },
           { headers: { Authorization: `Bearer ${token}` } }
         );
+        updateMeetup(editingMeetupId, res.data);
       } else {
-        await axios.post(
+        const res = await axios.post(
           `${API_URL}/meetups`,
           { title, description, location, event_date: eventDate ? new Date(eventDate).toISOString() : null, max_attendees: parseInt(maxAttendees, 10) || 10 },
           { headers: { Authorization: `Bearer ${token}` } }
         );
+        addMeetup(res.data);
+        meetupId = res.data.id;
       }
+
+      if (meetupImageUri && meetupImageUri !== meetups.find((m: MeetupData) => m.id === meetupId)?.image_url) {
+        setUploadingMeetupImage(true);
+        const formData = new FormData();
+        if (Platform.OS === 'web') {
+          const res = await fetch(meetupImageUri);
+          const blob = await res.blob();
+          formData.append('file', blob, 'cover.jpg');
+        } else {
+          formData.append('file', {
+            uri: meetupImageUri,
+            name: 'cover.jpg',
+            type: 'image/jpeg',
+          } as any);
+        }
+
+        try {
+          const uploadRes = await axios.post(`${API_URL}/meetups/${meetupId}/image`, formData, {
+            headers: {
+              Authorization: `Bearer ${token}`,
+              'Content-Type': 'multipart/form-data',
+            },
+          });
+          updateMeetup(meetupId!, uploadRes.data);
+        } catch (imgErr) {
+          console.warn('Image upload failed', imgErr);
+        } finally {
+          setUploadingMeetupImage(false);
+        }
+      }
+
       setEditingMeetupId(null);
       setTitle('');
       setDescription('');
       setLocation('');
       setEventDate('');
       setMaxAttendees('10');
-      fetchMeetups();
+      setMeetupImageUri(null);
     } catch (err: any) {
       const detail = err.response?.data?.detail;
       setError(Array.isArray(detail) ? detail[0].msg : (detail || 'Failed to save meetup'));
@@ -733,10 +933,11 @@ export default function App() {
   const handleEdit = (meetup: MeetupData) => {
     setEditingMeetupId(meetup.id);
     setTitle(meetup.title);
-    setDescription(meetup.description);
+    setDescription(meetup.description || '');
     setLocation(meetup.location);
     setEventDate(meetup.event_date ? new Date(meetup.event_date).toISOString().slice(0, 16) : '');
     setMaxAttendees(String(meetup.max_attendees));
+    setMeetupImageUri(meetup.image_url || null);
   };
 
   const handleDelete = async (id: number) => {
@@ -744,7 +945,7 @@ export default function App() {
       await axios.delete(`${API_URL}/meetups/${id}`, {
         headers: { Authorization: `Bearer ${token}` }
       });
-      fetchMeetups();
+      removeMeetup(id);
     } catch (err: any) {
       const detail = err.response?.data?.detail;
       setError(Array.isArray(detail) ? detail[0].msg : (detail || 'Failed to delete meetup'));
@@ -838,6 +1039,43 @@ export default function App() {
     }
   };
 
+  const handlePickMeetupImage = async () => {
+    try {
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        aspect: [16, 9],
+        quality: 0.8,
+      });
+
+      if (!result.canceled && result.assets[0]) {
+        if (result.assets[0].fileSize && result.assets[0].fileSize > 5 * 1024 * 1024) {
+          setError('File size must be under 5MB');
+          setTimeout(() => setError(''), 3000);
+          return;
+        }
+        setMeetupImageUri(result.assets[0].uri);
+      }
+    } catch (err: any) {
+      console.warn('Failed to pick image:', err);
+      setError('Failed to pick image');
+      setTimeout(() => setError(''), 3000);
+    }
+  };
+
+  const handleRemoveMeetupImage = async () => {
+    setMeetupImageUri(null);
+    if (editingMeetupId) {
+      try {
+        await axios.delete(`${API_URL}/meetups/${editingMeetupId}/image`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+      } catch (e) {
+        console.warn('Failed to delete image', e);
+      }
+    }
+  };
+
   const handleJoin = async (id: number) => {
     try {
       await axios.post(
@@ -845,7 +1083,6 @@ export default function App() {
         {},
         { headers: { Authorization: `Bearer ${token}` } }
       );
-      fetchMeetups();
     } catch (err: any) {
       const detail = err.response?.data?.detail;
       setError(Array.isArray(detail) ? detail[0].msg : (detail || 'Could not join meetup'));
@@ -860,7 +1097,6 @@ export default function App() {
         {},
         { headers: { Authorization: `Bearer ${token}` } }
       );
-      fetchMeetups();
     } catch (err: any) {
       const detail = err.response?.data?.detail;
       setError(Array.isArray(detail) ? detail[0].msg : (detail || 'Could not leave meetup'));
@@ -1088,7 +1324,7 @@ export default function App() {
 
   // ── Dashboard (Airbnb Spacing + Partiful Aesthetic) ────────────────
   const renderProfile = () => (
-    <ScrollView style={styles.dashboardContainer} contentContainerStyle={styles.dashboardContent}>
+    <ScrollView style={styles.dashboardContainer} contentContainerStyle={{ paddingBottom: 100, paddingHorizontal: 24 }}>
       <Animated.View entering={FadeInDown} style={styles.dashHeader}>
         <View style={styles.dashHeaderLeft}>
           <Text style={styles.dashLogoEmoji}>👤</Text>
@@ -1111,7 +1347,7 @@ export default function App() {
       ) : null}
 
       <View style={styles.card}>
-        <Text style={styles.authTitle}>Edit Profile</Text>
+        <Text style={[styles.sectionHeader, { marginBottom: 16 }]}>Edit Profile</Text>
         
         {/* Profile Picture Upload Section */}
         <View style={{ alignItems: 'center', marginBottom: 20 }}>
@@ -1168,21 +1404,30 @@ export default function App() {
         >
           <Text style={[styles.primaryBtnText, { color: '#ef4444' }]}>Log Out</Text>
         </TouchableOpacity>
+        <TouchableOpacity 
+          style={[styles.primaryBtn, { backgroundColor: '#fee2e2', marginTop: 12 }]} 
+          onPress={handleDeleteAccount}
+        >
+          <Text style={[styles.primaryBtnText, { color: '#dc2626' }]}>Delete Account</Text>
+        </TouchableOpacity>
       </View>
 
-      <Text style={[styles.sectionTitle, { marginTop: 24 }]}>My Meetups</Text>
+      <Text style={[styles.sectionHeader, { marginTop: 24, marginBottom: 16 }]}>My Meetups</Text>
       {meetups
-        .filter(m => m.host?.username === currentUser || joinedMeetupIds.includes(m.id))
-        .map((meetup, index) => (
+        .filter((m: MeetupData) => m.host?.username === currentUser || joinedMeetupIds.includes(m.id))
+        .map((meetup: MeetupData, index: number) => (
           <MeetupCard
             key={meetup.id}
             meetup={meetup}
             index={index}
             currentUser={currentUser}
+            currentUserObj={currentUserObj}
+            token={token}
             onJoin={handleJoin}
             onLeave={handleLeave}
             onEdit={handleEdit}
             onDelete={handleDelete}
+            isJoined={joinedMeetupIds.includes(meetup.id)}
           />
         ))}
     </ScrollView>
@@ -1221,6 +1466,14 @@ export default function App() {
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={C.primary} />
         }
+        scrollEventThrottle={16}
+        onScroll={({ nativeEvent }) => {
+          const { layoutMeasurement, contentOffset, contentSize } = nativeEvent;
+          const isCloseToBottom = layoutMeasurement.height + contentOffset.y >= contentSize.height - 50;
+          if (isCloseToBottom && !loadingMore && hasMoreMeetups) {
+            loadMoreMeetups();
+          }
+        }}
       >
         {/* Error banner in dashboard */}
         {error ? (
@@ -1244,6 +1497,39 @@ export default function App() {
             </View>
 
             <View style={styles.hostCardInner}>
+              {/* Meetup Image Picker */}
+              <View style={{ alignItems: 'center', marginBottom: 20 }}>
+                {meetupImageUri ? (
+                  <View style={{ width: '100%', height: 150, borderRadius: 14, overflow: 'hidden', marginBottom: 12, backgroundColor: C.border }}>
+                    <Image source={{ uri: meetupImageUri }} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
+                  </View>
+                ) : null}
+                <View style={{ flexDirection: 'row', gap: 10 }}>
+                  <TouchableOpacity 
+                    style={[styles.primaryBtn, { paddingVertical: 8, paddingHorizontal: 16 }]} 
+                    onPress={handlePickMeetupImage}
+                    disabled={uploadingMeetupImage}
+                  >
+                    {uploadingMeetupImage ? (
+                      <ActivityIndicator color={C.text} size="small" />
+                    ) : (
+                      <Text style={[styles.primaryBtnText, { fontSize: 14 }]}>
+                        {meetupImageUri ? 'Change Cover Image' : 'Add Cover Image'}
+                      </Text>
+                    )}
+                  </TouchableOpacity>
+                  {meetupImageUri && (
+                    <TouchableOpacity 
+                      style={[styles.primaryBtn, { backgroundColor: C.bg, borderWidth: 1, borderColor: C.border, paddingVertical: 8, paddingHorizontal: 16 }]} 
+                      onPress={handleRemoveMeetupImage}
+                      disabled={uploadingMeetupImage}
+                    >
+                      <Text style={[styles.primaryBtnText, { color: C.textMuted, fontSize: 14 }]}>Remove</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+              </View>
+
               <TextInput
                 style={styles.hostInput}
                 placeholder="What's the meetup called?"
@@ -1304,6 +1590,7 @@ export default function App() {
                     setLocation('');
                     setEventDate('');
                     setMaxAttendees('10');
+                    setMeetupImageUri(null);
                   }}
                   activeOpacity={0.85}
                 >
@@ -1330,7 +1617,7 @@ export default function App() {
               </Text>
             </Animated.View>
           ) : (
-            meetups.map((m, i) => (
+            meetups.map((m: MeetupData, i: number) => (
               <MeetupCard 
                 key={m.id} 
                 meetup={m} 
@@ -1339,12 +1626,17 @@ export default function App() {
                 onEdit={handleEdit} 
                 onDelete={handleDelete} 
                 index={i} 
-                currentUser={currentUser} 
+                currentUser={currentUser}
+                currentUserObj={currentUserObj}
+                token={token}
                 isJoined={joinedMeetupIds.includes(m.id)}
               />
             ))
           )}
         </Animated.View>
+        {loadingMore && (
+          <ActivityIndicator style={{ marginTop: 20 }} color={C.primary} />
+        )}
       </ScrollView>
     </View>
   );
@@ -1353,6 +1645,38 @@ export default function App() {
     <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
       <StatusBar barStyle="dark-content" backgroundColor={C.bg} />
       {step === 'dashboard' && token ? renderDashboard() : step === 'profile' && token ? renderProfile() : renderOnboarding()}
+
+      {/* Custom Delete Account Modal */}
+      <Modal
+        visible={showDeleteConfirm}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setShowDeleteConfirm(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <Animated.View entering={FadeInDown} style={styles.modalContent}>
+            <Text style={styles.modalEmoji}>🗑️</Text>
+            <Text style={styles.modalTitle}>Delete Account</Text>
+            <Text style={styles.modalText}>
+              Are you sure you want to permanently delete your account and all your hosted meetups? This action cannot be undone.
+            </Text>
+            <View style={styles.modalActions}>
+              <TouchableOpacity
+                style={[styles.modalBtn, { backgroundColor: C.surface, borderWidth: 1, borderColor: C.border }]}
+                onPress={() => setShowDeleteConfirm(false)}
+              >
+                <Text style={[styles.modalBtnText, { color: C.text }]}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalBtn, { backgroundColor: '#dc2626' }]}
+                onPress={handleConfirmDeleteAccount}
+              >
+                <Text style={[styles.modalBtnText, { color: '#fff' }]}>Delete</Text>
+              </TouchableOpacity>
+            </View>
+          </Animated.View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -1841,6 +2165,26 @@ const styles = StyleSheet.create({
   joinBtnTextDisabled: {
     color: C.textMuted,
   },
+  discussionToggle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    marginTop: 12,
+    backgroundColor: C.surface,
+    borderRadius: 16,
+    borderWidth: 1.5,
+    borderColor: C.border,
+  },
+  discussionToggleIcon: {
+    fontSize: 16,
+    marginRight: 6,
+  },
+  discussionToggleText: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: C.text,
+  },
 
   // ── Error Banners ──────────────────────────────────────────────────
   errorBanner: {
@@ -1860,9 +2204,64 @@ const styles = StyleSheet.create({
   },
   errorTextSm: {
     color: C.error,
+    fontWeight: '600',
     fontSize: 14,
     marginTop: 12,
     textAlign: 'center',
+  },
+
+  // ── Custom Modal ───────────────────────────────────────────────────
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.4)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  modalContent: {
+    backgroundColor: C.surface,
+    borderRadius: 24,
+    padding: 24,
+    width: '100%',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.1,
+    shadowRadius: 20,
+    elevation: 10,
+  },
+  modalEmoji: {
+    fontSize: 48,
+    marginBottom: 16,
+  },
+  modalTitle: {
+    fontSize: 22,
+    fontWeight: '800',
+    color: C.text,
+    marginBottom: 12,
+  },
+  modalText: {
+    fontSize: 15,
+    color: C.textSecondary,
+    textAlign: 'center',
+    marginBottom: 24,
+    lineHeight: 22,
+  },
+  modalActions: {
+    flexDirection: 'row',
+    gap: 12,
+    width: '100%',
+  },
+  modalBtn: {
+    flex: 1,
+    paddingVertical: 14,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modalBtnText: {
+    fontSize: 16,
+    fontWeight: '700',
   },
 
   // ── Empty State ────────────────────────────────────────────────────

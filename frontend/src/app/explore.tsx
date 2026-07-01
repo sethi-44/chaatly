@@ -8,6 +8,8 @@ import {
   StyleSheet,
   Dimensions,
   Pressable,
+  Image,
+  ActivityIndicator,
 } from "react-native";
 import { StatusBar } from "expo-status-bar";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -21,7 +23,9 @@ import Animated, {
 } from "react-native-reanimated";
 import { C, SMALL_CARD_W, SHADOW_SM, SHADOW_MD, softBg, CARD_COLORS, CARD_EMOJIS, getCardColor, getCardEmoji } from '../constants';
 
-// ─── Mock Data ─────────────────────────────────────────────────────────────────
+import { useMeetups } from '../context/MeetupsContext';
+
+// ─── Categories ────────────────────────────────────────────────────────────────
 const CATEGORIES = [
   { id: "all", label: "All", emoji: "✨" },
   { id: "street", label: "Street Food", emoji: "🌮" },
@@ -32,127 +36,26 @@ const CATEGORIES = [
   { id: "vegan", label: "Vegan", emoji: "🥗" },
 ];
 
-interface Meetup {
-  id: string;
-  title: string;
-  description: string;
-  location: string;
-  host: string;
-  attendees: number;
-  maxAttendees: number;
-  date: string;
-  time: string;
-  category: string;
-  emoji: string;
-  accentColor: string;
+export interface MeetupPhotoResponse {
+  id: number;
+  image_url: string;
+  user_id: string;
+  created_at: string;
 }
 
-const FEATURED_MEETUPS: Meetup[] = [
-  {
-    id: "f1",
-    title: "Midnight Taco Crawl",
-    description:
-      "Explore the best late-night taco stands with fellow food lovers. We'll hit 4 spots in one epic night.",
-    location: "Downtown Arts District",
-    host: "Carlos M.",
-    attendees: 12,
-    maxAttendees: 16,
-    date: "Sat, Jun 21",
-    time: "9:00 PM",
-    category: "Street Food",
-    emoji: "🌮",
-    accentColor: C.primary,
-  },
-  {
-    id: "f2",
-    title: "Sunday Brunch Club",
-    description:
-      "A relaxed Sunday morning with homemade waffles, fresh juice, and great conversations.",
-    location: "Maple Street Kitchen",
-    host: "Priya K.",
-    attendees: 7,
-    maxAttendees: 10,
-    date: "Sun, Jun 22",
-    time: "10:30 AM",
-    category: "Brunch",
-    emoji: "🥞",
-    accentColor: C.accent,
-  },
-  {
-    id: "f3",
-    title: "Vegan Sushi Night",
-    description:
-      "Learn to roll plant-based sushi with a professional chef. All ingredients provided!",
-    location: "Green Leaf Studio",
-    host: "Yuki T.",
-    attendees: 9,
-    maxAttendees: 12,
-    date: "Fri, Jun 20",
-    time: "7:00 PM",
-    category: "Vegan",
-    emoji: "🍣",
-    accentColor: "#4ECDC4",
-  },
-];
-
-const POPULAR_MEETUPS: Meetup[] = [
-  {
-    id: "p1",
-    title: "BBQ & Blues Jam",
-    description: "Smoked ribs, brisket, and live blues guitar in the backyard.",
-    location: "Oakwood Park",
-    host: "James R.",
-    attendees: 18,
-    maxAttendees: 25,
-    date: "Sat, Jun 21",
-    time: "4:00 PM",
-    category: "BBQ",
-    emoji: "🔥",
-    accentColor: "#E74C3C",
-  },
-  {
-    id: "p2",
-    title: "Nonna's Pasta Night",
-    description: "Handmade pasta from scratch — just like grandma used to make.",
-    location: "Little Italy Kitchen",
-    host: "Maria L.",
-    attendees: 6,
-    maxAttendees: 8,
-    date: "Thu, Jun 19",
-    time: "6:30 PM",
-    category: "Home Cooked",
-    emoji: "🍝",
-    accentColor: C.primary,
-  },
-  {
-    id: "p3",
-    title: "Omakase Experience",
-    description: "An intimate 8-course chef's tasting with sake pairings.",
-    location: "Koi House",
-    host: "Chef Tanaka",
-    attendees: 4,
-    maxAttendees: 6,
-    date: "Fri, Jun 20",
-    time: "8:00 PM",
-    category: "Fine Dining",
-    emoji: "🍷",
-    accentColor: "#9B59B6",
-  },
-  {
-    id: "p4",
-    title: "Chai & Chaat Walk",
-    description: "Street food tour through the city's best chaat vendors.",
-    location: "Old Market Quarter",
-    host: "Arjun S.",
-    attendees: 14,
-    maxAttendees: 20,
-    date: "Sun, Jun 22",
-    time: "5:00 PM",
-    category: "Street Food",
-    emoji: "☕",
-    accentColor: C.accent,
-  },
-];
+interface MeetupData {
+  id: number;
+  title: string;
+  description: string | null;
+  location: string;
+  event_date?: string | null;
+  host: { username: string; profile_picture_url?: string | null; bio?: string | null } | null;
+  attendee_count: number;
+  max_attendees: number;
+  spots_left?: number;
+  image_url?: string | null;
+  photos?: MeetupPhotoResponse[];
+}
 
 // ─── Animated Category Pill ────────────────────────────────────────────────────
 function CategoryPill({
@@ -214,7 +117,7 @@ function FeaturedCard({
   meetup,
   index,
 }: {
-  meetup: Meetup;
+  meetup: MeetupData;
   index: number;
 }) {
   const scale = useSharedValue(1);
@@ -231,8 +134,14 @@ function FeaturedCard({
     scale.value = withSpring(1, { damping: 15, stiffness: 300 });
   }, [scale]);
 
-  const spotsLeft = meetup.maxAttendees - meetup.attendees;
-  const fillPercent = (meetup.attendees / meetup.maxAttendees) * 100;
+  const spotsLeft = meetup.spots_left ?? (meetup.max_attendees - (meetup.attendee_count || 0));
+  const fillPercent = Math.min(((meetup.attendee_count || 0) / (meetup.max_attendees || 1)) * 100, 100);
+  
+  const accentColor = getCardColor(index);
+  const emoji = getCardEmoji(index);
+  
+  const formattedDate = meetup.event_date ? new Date(meetup.event_date).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' }) : 'TBD';
+  const formattedTime = meetup.event_date ? new Date(meetup.event_date).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' }) : 'TBD';
 
   return (
     <Animated.View
@@ -251,46 +160,62 @@ function FeaturedCard({
           <View
             style={[
               styles.featuredAccentBar,
-              { backgroundColor: meetup.accentColor },
+              { backgroundColor: accentColor },
             ]}
           />
 
           <View style={styles.featuredCard}>
             {/* Header row */}
-            <View style={styles.featuredHeader}>
-              <View
-                style={[
-                  styles.featuredEmojiWrap,
-                  { backgroundColor: softBg(meetup.accentColor, 0.12) },
-                ]}
-              >
-                <Text style={styles.featuredEmoji}>{meetup.emoji}</Text>
-              </View>
-              <View style={styles.featuredBadgeRow}>
-                <View
-                  style={[
-                    styles.dateBadge,
-                    { backgroundColor: softBg(C.accent, 0.15) },
-                  ]}
-                >
-                  <Text style={styles.dateBadgeText}>{meetup.date}</Text>
-                </View>
-                <View
-                  style={[
-                    styles.timeBadge,
-                    { backgroundColor: softBg(C.purple, 0.1) },
-                  ]}
-                >
-                  <Text style={styles.timeBadgeText}>{meetup.time}</Text>
+            {meetup.image_url ? (
+              <View style={{ marginHorizontal: -22, marginTop: -22, marginBottom: 14, height: 150 }}>
+                <Image source={{ uri: meetup.image_url }} style={{ width: '100%', height: '100%', borderTopLeftRadius: 20, borderTopRightRadius: 20 }} resizeMode="cover" />
+                <View style={[styles.featuredBadgeRow, { position: 'absolute', bottom: 12, right: 12 }]}>
+                  <View style={[styles.dateBadge, { backgroundColor: softBg(C.accent, 0.9) }]}>
+                    <Text style={styles.dateBadgeText}>{formattedDate}</Text>
+                  </View>
+                  <View style={[styles.timeBadge, { backgroundColor: softBg(C.purple, 0.9) }]}>
+                    <Text style={styles.timeBadgeText}>{formattedTime}</Text>
+                  </View>
                 </View>
               </View>
-            </View>
+            ) : (
+              <View style={styles.featuredHeader}>
+                <View
+                  style={[
+                    styles.featuredEmojiWrap,
+                    { backgroundColor: softBg(accentColor, 0.12) },
+                  ]}
+                >
+                  <Text style={styles.featuredEmoji}>{emoji}</Text>
+                </View>
+                <View style={styles.featuredBadgeRow}>
+                  <View
+                    style={[
+                      styles.dateBadge,
+                      { backgroundColor: softBg(C.accent, 0.15) },
+                    ]}
+                  >
+                    <Text style={styles.dateBadgeText}>{formattedDate}</Text>
+                  </View>
+                  <View
+                    style={[
+                      styles.timeBadge,
+                      { backgroundColor: softBg(C.purple, 0.1) },
+                    ]}
+                  >
+                    <Text style={styles.timeBadgeText}>{formattedTime}</Text>
+                  </View>
+                </View>
+              </View>
+            )}
 
             {/* Content */}
             <Text style={styles.featuredTitle}>{meetup.title}</Text>
-            <Text style={styles.featuredDesc} numberOfLines={2}>
-              {meetup.description}
-            </Text>
+            {meetup.description && (
+              <Text style={styles.featuredDesc} numberOfLines={2}>
+                {meetup.description}
+              </Text>
+            )}
 
             {/* Location */}
             <View style={styles.metaRow}>
@@ -304,10 +229,19 @@ function FeaturedCard({
               <Text style={styles.metaText}>
                 Hosted by{" "}
                 <Text style={{ color: C.primary, fontWeight: "700" }}>
-                  {meetup.host}
+                  {meetup.host?.username || 'Unknown'}
                 </Text>
               </Text>
             </View>
+
+            {/* Gallery Mini Carousel */}
+            {meetup.photos && meetup.photos.length > 0 && (
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 12 }} contentContainerStyle={{ paddingRight: 10 }}>
+                {meetup.photos.map(photo => (
+                  <Image key={photo.id} source={{ uri: photo.image_url }} style={{ width: 64, height: 64, borderRadius: 12, marginRight: 8, backgroundColor: C.border }} />
+                ))}
+              </ScrollView>
+            )}
 
             {/* Footer: attendee bar */}
             <View style={styles.featuredFooter}>
@@ -318,13 +252,13 @@ function FeaturedCard({
                       styles.attendeeBarFill,
                       {
                         width: `${fillPercent}%`,
-                        backgroundColor: meetup.accentColor,
+                        backgroundColor: accentColor,
                       },
                     ]}
                   />
                 </View>
                 <Text style={styles.attendeeText}>
-                  {meetup.attendees}/{meetup.maxAttendees} joined
+                  {meetup.attendee_count || 0}/{meetup.max_attendees} joined
                 </Text>
               </View>
               <View
@@ -353,7 +287,7 @@ function FeaturedCard({
 }
 
 // ─── Small Card (Popular Near You) ─────────────────────────────────────────────
-function SmallCard({ meetup, index }: { meetup: Meetup; index: number }) {
+function SmallCard({ meetup, index }: { meetup: MeetupData; index: number }) {
   const scale = useSharedValue(1);
 
   const animatedStyle = useAnimatedStyle(() => ({
@@ -367,6 +301,11 @@ function SmallCard({ meetup, index }: { meetup: Meetup; index: number }) {
   const handlePressOut = useCallback(() => {
     scale.value = withSpring(1, { damping: 15, stiffness: 300 });
   }, [scale]);
+
+  const accentColor = getCardColor(index);
+  const emoji = getCardEmoji(index);
+  
+  const formattedDate = meetup.event_date ? new Date(meetup.event_date).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : 'TBD';
 
   return (
     <Animated.View
@@ -382,25 +321,34 @@ function SmallCard({ meetup, index }: { meetup: Meetup; index: number }) {
           <View
             style={[
               styles.smallAccentBar,
-              { backgroundColor: meetup.accentColor },
+              { backgroundColor: accentColor },
             ]}
           />
 
           <View style={styles.smallCard}>
             {/* Top: Emoji & Category */}
-            <View style={styles.smallHeader}>
-              <View
-                style={[
-                  styles.smallEmojiWrap,
-                  { backgroundColor: softBg(meetup.accentColor, 0.12) },
-                ]}
-              >
-                <Text style={styles.smallEmoji}>{meetup.emoji}</Text>
+            {meetup.image_url ? (
+              <View style={{ marginHorizontal: -16, marginTop: -16, marginBottom: 10, height: 100 }}>
+                <Image source={{ uri: meetup.image_url }} style={{ width: '100%', height: '100%', borderTopRightRadius: 18 }} resizeMode="cover" />
+                <View style={[styles.smallCategoryBadge, { position: 'absolute', top: 8, right: 8, backgroundColor: 'rgba(255,255,255,0.9)' }]}>
+                  <Text style={styles.smallCategoryText}>Meetup</Text>
+                </View>
               </View>
-              <View style={styles.smallCategoryBadge}>
-                <Text style={styles.smallCategoryText}>{meetup.category}</Text>
+            ) : (
+              <View style={styles.smallHeader}>
+                <View
+                  style={[
+                    styles.smallEmojiWrap,
+                    { backgroundColor: softBg(accentColor, 0.12) },
+                  ]}
+                >
+                  <Text style={styles.smallEmoji}>{emoji}</Text>
+                </View>
+                <View style={styles.smallCategoryBadge}>
+                  <Text style={styles.smallCategoryText}>Meetup</Text>
+                </View>
               </View>
-            </View>
+            )}
 
             <Text style={styles.smallTitle} numberOfLines={2}>
               {meetup.title}
@@ -416,12 +364,21 @@ function SmallCard({ meetup, index }: { meetup: Meetup; index: number }) {
               </Text>
             </View>
 
+            {/* Mini Gallery */}
+            {meetup.photos && meetup.photos.length > 0 && (
+              <View style={{ flexDirection: 'row', marginTop: 8, paddingLeft: 4 }}>
+                {meetup.photos.slice(0, 4).map((photo, i) => (
+                  <Image key={photo.id} source={{ uri: photo.image_url }} style={{ width: 26, height: 26, borderRadius: 13, marginLeft: -8, borderWidth: 1.5, borderColor: C.card, zIndex: 10 - i, backgroundColor: C.border }} />
+                ))}
+              </View>
+            )}
+
             {/* Footer */}
             <View style={styles.smallFooter}>
-              <Text style={styles.smallDate}>{meetup.date}</Text>
+              <Text style={styles.smallDate}>{formattedDate}</Text>
               <View style={styles.smallAttendeeBadge}>
                 <Text style={styles.smallAttendeeText}>
-                  {meetup.attendees}👥
+                  {meetup.attendee_count || 0}👥
                 </Text>
               </View>
             </View>
@@ -435,6 +392,51 @@ function SmallCard({ meetup, index }: { meetup: Meetup; index: number }) {
 // ─── Main Screen ───────────────────────────────────────────────────────────────
 export default function ExploreScreen() {
   const [activeCategory, setActiveCategory] = useState("all");
+  const [searchQuery, setSearchQuery] = useState("");
+  const { meetups, loadMoreMeetups, hasMoreMeetups, loadingMore } = useMeetups();
+  
+  // Category heuristic to assign a category to meetups without one in the DB
+  const getCategoryForMeetup = useCallback((meetup: MeetupData) => {
+    const text = (meetup.title + " " + (meetup.description || "")).toLowerCase();
+    const keywords: Record<string, string[]> = {
+      street: ['street', 'truck', 'cart', 'taco', 'burger', 'pizza', 'fast'],
+      home: ['home', 'family', 'grandma', 'cooked', 'homemade', 'stew', 'soup', 'bake'],
+      fine: ['fine', 'fancy', 'wine', 'steak', 'gourmet', 'elegant', 'chef', 'tasting'],
+      brunch: ['brunch', 'breakfast', 'pancake', 'egg', 'morning', 'coffee', 'cafe', 'mimosa'],
+      bbq: ['bbq', 'barbeque', 'barbecue', 'grill', 'smoke', 'ribs', 'brisket', 'meat'],
+      vegan: ['vegan', 'vegetarian', 'plant', 'healthy', 'salad', 'green', 'organic', 'raw'],
+    };
+    for (const [cat, words] of Object.entries(keywords)) {
+      if (words.some(w => text.includes(w))) return cat;
+    }
+    // Fallback based on ID so every meetup gets a fun category
+    const fallbackCategories = CATEGORIES.map(c => c.id).filter(id => id !== 'all');
+    return fallbackCategories[meetup.id % fallbackCategories.length];
+  }, []);
+
+  // Filter meetups
+  const filteredMeetups = meetups.filter((m: MeetupData) => {
+    // 1. Search Query Filter
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      const matchTitle = m.title.toLowerCase().includes(q);
+      const matchLoc = m.location.toLowerCase().includes(q);
+      const matchHost = m.host?.username?.toLowerCase().includes(q);
+      if (!matchTitle && !matchLoc && !matchHost) return false;
+    }
+    
+    // 2. Category Filter
+    if (activeCategory !== 'all') {
+      const cat = getCategoryForMeetup(m);
+      if (cat !== activeCategory) return false;
+    }
+    
+    return true;
+  });
+
+  // Split filtered meetups into featured and popular
+  const featuredMeetups = filteredMeetups.slice(0, Math.ceil(filteredMeetups.length / 2));
+  const popularMeetups = filteredMeetups.slice(Math.ceil(filteredMeetups.length / 2));
 
   return (
     <SafeAreaView style={styles.container} edges={["top"]}>
@@ -444,6 +446,14 @@ export default function ExploreScreen() {
         style={styles.scrollView}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
+        scrollEventThrottle={16}
+        onScroll={({ nativeEvent }) => {
+          const { layoutMeasurement, contentOffset, contentSize } = nativeEvent;
+          const isCloseToBottom = layoutMeasurement.height + contentOffset.y >= contentSize.height - 50;
+          if (isCloseToBottom && !loadingMore && hasMoreMeetups) {
+            loadMoreMeetups();
+          }
+        }}
       >
         {/* ── Header ─────────────────────────────────────────────────────── */}
         <Animated.View
@@ -466,7 +476,8 @@ export default function ExploreScreen() {
             style={styles.searchInput}
             placeholder="Search meetups, cuisines, hosts..."
             placeholderTextColor={C.textSecondary}
-            editable={false}
+            value={searchQuery}
+            onChangeText={setSearchQuery}
           />
           <View style={styles.searchFilterBtn}>
             <Text style={styles.searchFilterIcon}>⚙️</Text>
@@ -492,55 +503,74 @@ export default function ExploreScreen() {
         </ScrollView>
 
         {/* ── Featured Section ───────────────────────────────────────────── */}
-        <Animated.View
-          entering={FadeIn.delay(300).duration(400)}
-          style={styles.sectionHeader}
-        >
-          <View>
-            <Text style={styles.sectionTitle}>Featured Meetups</Text>
-            <Text style={styles.sectionSubtitle}>
-              Hand-picked experiences for you
-            </Text>
-          </View>
-          <TouchableOpacity style={styles.seeAllBtn}>
-            <Text style={styles.seeAllText}>See all</Text>
-          </TouchableOpacity>
-        </Animated.View>
+        {featuredMeetups.length > 0 && (
+          <Animated.View
+            entering={FadeIn.delay(300).duration(400)}
+            style={styles.sectionHeader}
+          >
+            <View>
+              <Text style={styles.sectionTitle}>Featured Meetups</Text>
+              <Text style={styles.sectionSubtitle}>
+                Hand-picked experiences for you
+              </Text>
+            </View>
+            <TouchableOpacity style={styles.seeAllBtn}>
+              <Text style={styles.seeAllText}>See all</Text>
+            </TouchableOpacity>
+          </Animated.View>
+        )}
 
-        {FEATURED_MEETUPS.map((meetup, index) => (
+        {featuredMeetups.map((meetup: MeetupData, index: number) => (
           <FeaturedCard key={meetup.id} meetup={meetup} index={index} />
         ))}
 
         {/* ── Popular Near You Section ───────────────────────────────────── */}
-        <Animated.View
-          entering={FadeIn.delay(600).duration(400)}
-          style={[styles.sectionHeader, { marginTop: 32 }]}
-        >
-          <View>
-            <Text style={styles.sectionTitle}>Popular Near You</Text>
-            <Text style={styles.sectionSubtitle}>
-              Happening in your neighborhood
-            </Text>
-          </View>
-          <TouchableOpacity style={styles.seeAllBtn}>
-            <Text style={styles.seeAllText}>See all</Text>
-          </TouchableOpacity>
-        </Animated.View>
+        {popularMeetups.length > 0 && (
+          <>
+            <Animated.View
+              entering={FadeIn.delay(600).duration(400)}
+              style={[styles.sectionHeader, { marginTop: 32 }]}
+            >
+              <View>
+                <Text style={styles.sectionTitle}>Popular Near You</Text>
+                <Text style={styles.sectionSubtitle}>
+                  Happening in your neighborhood
+                </Text>
+              </View>
+              <TouchableOpacity style={styles.seeAllBtn}>
+                <Text style={styles.seeAllText}>See all</Text>
+              </TouchableOpacity>
+            </Animated.View>
 
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          snapToInterval={SMALL_CARD_W + 14}
-          decelerationRate="fast"
-          contentContainerStyle={styles.popularList}
-        >
-          {POPULAR_MEETUPS.map((item, index) => (
-            <SmallCard key={item.id} meetup={item} index={index} />
-          ))}
-        </ScrollView>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              snapToInterval={SMALL_CARD_W + 14}
+              decelerationRate="fast"
+              contentContainerStyle={styles.popularList}
+            >
+              {popularMeetups.map((item: MeetupData, index: number) => (
+                <SmallCard key={item.id} meetup={item} index={index} />
+              ))}
+            </ScrollView>
+          </>
+        )}
+
+        {filteredMeetups.length === 0 && !loadingMore && (
+          <Animated.View entering={FadeIn.delay(200)} style={{ alignItems: 'center', marginTop: 60, paddingHorizontal: 32 }}>
+            <Text style={{ fontSize: 48, marginBottom: 16 }}>🔍</Text>
+            <Text style={{ fontSize: 20, fontWeight: '700', color: C.text, marginBottom: 8, textAlign: 'center' }}>No meetups found</Text>
+            <Text style={{ fontSize: 15, color: C.textSecondary, textAlign: 'center', lineHeight: 22 }}>
+              Try adjusting your search or category filter to find more delicious events.
+            </Text>
+          </Animated.View>
+        )}
 
         {/* ── Bottom spacer for tab bar ──────────────────────────────────── */}
-        <View style={{ height: 100 }} />
+        <View style={{ height: 40 }} />
+        {loadingMore && (
+          <ActivityIndicator style={{ marginBottom: 60 }} color={C.primary} />
+        )}
       </ScrollView>
     </SafeAreaView>
   );
